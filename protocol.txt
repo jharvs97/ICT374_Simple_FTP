@@ -1,0 +1,32 @@
+ A network protocol must specify all three of the following:
+
+1. the format of messages exchanged over the network
+2. the content of the messages exchanged over the network
+3. the sequence of messages exchanged over the network
+
+PUT Command
+
+1. When the client makes a 'put' request, this message is sent.
+- One byte OpCode, which is the ASCII character P
+- Two byte short integer in two's compliment and in network byte order, which represents the length
+of the filename of the file to be sent to the server
+- Sequence of ASCII characters representing the filename
+
+2. Once the server recieves the message with OpCode 'P', the server responds with:
+- One byte OpCode, which is the ASCII character 'P'
+- One byte ack code
+    - 0: OK
+    - >0: Error
+
+3. Once the client receives the acknowledgment message withe ack code of 0, it responds with the following
+message
+- One byte OpCode, which is ' '
+- A 4 byte integer in network byte order which represents the length of the file as M
+- A sequence of M bytes which is the content of the file. The file is transferred in (some amount) byte
+blocks.
+
+4. Once the server recieves the message with OpCode ' ', it responds with
+- One byte OpCode, which is ' '
+- One byte ack code, which is either
+    -  0: OK
+    - >0: Error
