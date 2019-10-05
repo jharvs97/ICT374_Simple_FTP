@@ -40,6 +40,7 @@ int main(int argc, char** argv)
         // If no host:port is provided, assume local host 
         gethostname(host, sizeof(host));
         port = SERV_TCP_PORT;   
+        printf("Hostname: %s", host);
     }
     else if(argc == 2){
         // Use the host/IP provided
@@ -63,15 +64,7 @@ int main(int argc, char** argv)
     } else {
         printf("Invalid hostname\n"); exit(1);
     }
-
-    // If address couldn't be resolved by gethostbyname()
-    // Check if host is an IP address string
-    // If inet_aton is non-zero, success
-    if((inet_aton(host, &ser_addr.sin_addr)) == 0){
-        printf("Invalid IP address\n"); exit(1);
-    }
     
-
     // create TCP socket
     sock_d = socket(PF_INET, SOCK_STREAM, 0);
 
