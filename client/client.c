@@ -57,13 +57,16 @@ int main(int argc, char** argv)
     ser_addr.sin_port = htons(port);
     
     // If you can get the host address by a name
-    // Then set the sin_addr to hp-
+    // Then set the sin_addr to hp->h_addr
     if((hp = gethostbyname(host)) != NULL){
         ser_addr.sin_addr.s_addr = *(u_long*)hp->h_addr;
     } else {
         printf("Invalid hostname\n"); exit(1);
     }
 
+    // If address couldn't be resolved by gethostbyname()
+    // Check if host is an IP address string
+    // If inet_aton is non-zero, success
     if((inet_aton(host, &ser_addr.sin_addr)) == 0){
         printf("Invalid IP address\n"); exit(1);
     }
