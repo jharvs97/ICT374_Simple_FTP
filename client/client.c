@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -41,23 +42,12 @@ int main(int argc, char** argv)
         port = SERV_TCP_PORT;   
     }
     else if(argc == 2){
-        // Use the host name provided
+        // Use the host/IP provided
         strcpy(host, argv[1]);
-        port = SERV_TCP_PORT;
-    }
-    else if(argc == 3){
-        // use host:port provided
-        strcpy(host, argv[1]);
-        int port_int = atoi(argv[2]);
-        if(port_int >= 1024 && port_int < 65536)
-            port = port_int;
-        else{
-            printf("Error: provided port number must be between 1024 - 65535\n");
-            exit(1);
-        }
+        port = SERV_TCP_PORT;        
     }
     else{
-        printf("Usage: %s [ <server_host_name> [ <server_listening_port> ] ]\n", argv[0]);
+        printf("Usage: %s [ <server_host_name> | <server_ip_address> ]\n", argv[0]);
         exit(1);
     }
 
@@ -66,10 +56,18 @@ int main(int argc, char** argv)
     ser_addr.sin_family = AF_INET;
     ser_addr.sin_port = htons(port);
     
-    if((hp = gethostbyname(host)) == NULL){
-        printf("Host %s not found\n", host); exit(1);
+    // If you can get the host address by a name
+    // Then set the sin_addr to hp-
+    if((hp = gethostbyname(host)) != NULL){
+        ser_addr.sin_addr.s_addr = *(u_long*)hp->h_addr;
+    } else {
+        printf("Invalid hostname\n"); exit(1);
     }
-    ser_addr.sin_addr.s_addr = *(u_long*)hp->h_addr;
+
+    if((inet_aton(host, &ser_addr.sin_addr)) == 0){
+        printf("Invalid IP address\n"); exit(1);
+    }
+    
 
     // create TCP socket
     sock_d = socket(PF_INET, SOCK_STREAM, 0);
