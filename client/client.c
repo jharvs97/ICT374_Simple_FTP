@@ -21,6 +21,23 @@
 
 #define u_long unsigned long
 
+int send_server(int fd, char *buf, int nbytes){
+	short data_size = nbytes; /* short must be two bytes long */
+	int n, nw;
+	if (nbytes > MAX_BLOCK_SIZE)
+	return (-3); /* too many bytes to send in one go */
+	/* send the data size */
+	data_size = htons(data_size);
+	if (write(fd, (char *) &data_size, 1) != 1) return (-1);
+	if (write(fd, (char *) (&data_size)+1, 1) != 1) return (-1);
+	/* send nbytes */
+	for (n=0; n<nbytes; n += nw) {
+	if ((nw = write(fd, buf+n, nbytes-n)) <= 0)
+	return (nw); /* write error */
+	}
+	return (n);
+}
+
 int main(int argc, char** argv)
 {
     int sock_d;                     // Socket descriptor
@@ -136,8 +153,26 @@ int main(int argc, char** argv)
                     printf("%s", files_buf);
                 }
             }
+	    else if(strcmp(tokens[0], "cwd") == 0){
+	    	switch(num_tokens){
+			case 1 :
+				printf("No directory specified");
+				break;
+			case 2 :
+                     		printf("length of token 1: %d\n",(int)strlen(tokens[1]));
+				short length = (short)strlen(tokens[1]);
+				char command = 'C';
+				command = htons(command);
+				strcpy(buf,tokens[1]);
+				//send command
+				send_server(sock_d, &command, sizeof(command));
+				break;
+
+			default :
+				printf("Directory names cannot have spaces");
+	    }
+	    }
         }
-    }
+	}	    
     return 0;
 }
-
