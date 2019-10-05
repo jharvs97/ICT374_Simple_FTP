@@ -103,12 +103,12 @@ int main(int argc, char** argv)
             num_tokens = tokenise(temp_buf, tokens);
             /* LOCAL COMMAND HANDLER */
             // TODO: Refactor handlers into their own module perhaps?
-            if(strcmp(tokens[1], "lpwd") == 0){
+            if(strcmp(tokens[0], "lpwd") == 0){
                 memset(buf, 0, MAX_BLOCK_SIZE);
                 getcwd(buf, MAX_BLOCK_SIZE);
                 printf("%s\n", buf);
             }
-            else if(strcmp(tokens[1], "lcd") == 0){
+            else if(strcmp(tokens[0], "lcd") == 0){
                 if(num_tokens == 2){
                     if(chdir(tokens[1]) == -1){
                         printf("Error: directory not found\n");
@@ -117,15 +117,11 @@ int main(int argc, char** argv)
                     printf("Invalid command. Usage is: lcd [<path>]\n");
                 }
             }
-            else if(strcmp(tokens[1], "ldir") == 0){
+            else if(strcmp(tokens[0], "ldir") == 0){
                 DIR* dir_p;
                 struct dirent* dirent_p;
 
                 memset(files_buf, 0, MAX_BLOCK_SIZE);
-                memset(temp_buf, 0, MAX_BLOCK_SIZE);
-
-                getcwd(temp_buf, MAX_BLOCK_SIZE);
-                printf("Current dir when calling ldir: %s\n", temp_buf);
 
                 if((dir_p = opendir(".")) == NULL){
                     perror("opening dir");
