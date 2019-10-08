@@ -50,3 +50,60 @@ int writen(int fd, char *buf, int nbytes)
     } 
     return (n);
 }
+
+int write_opcode(int fd, char code){
+    int nw = write(fd,(char*) &code, 1);
+
+    if(nw != 1) return -1;
+
+    return nw;  
+}
+
+int read_opcode(int fd, char* code){
+    char d;
+    int nr;
+    if((nr = read(fd, (char*) &d, 1)) != 1) return -1;
+
+    *code = d;
+
+    return nr;
+}
+
+int write_twonetbs(int fd, short data){
+    short ns_data = htons(data);
+    int nw = write(fd, &ns_data, 2);
+
+    if(nw != 2) return -1;
+
+    return nw;
+}
+
+int read_twonetbs(int fd, short *data){
+
+    short d, nr;
+    if( (nr = read(fd, &d, 2)) != 2) return -1;
+
+    *data = ntohs(d);
+
+    return nr;
+}
+
+int write_fournetbs(int fd, int data){
+    int d = htonl(data);
+
+    int nw = write(fd, &d, 4);
+
+    if(nw != 4) return -1;
+
+    return nw;
+}
+
+int read_fournetbs(int fd, int *data){
+    int d, nr;
+
+    if( (nr = read(fd, &d, 4)) != 4) return -1;
+
+    *data = ntohl(d);
+
+    return nr;
+}

@@ -14,12 +14,86 @@
 // My headers
 #include "token.h"
 #include "stream.h"
+#include "protocol.h"
 
 #define SERV_TCP_PORT 40005
 
 #define h_addr h_addr_list[0]
 
 #define u_long unsigned long
+
+void local_pwd(){
+    char buf[MAX_BLOCK_SIZE];
+    memset(buf, 0, MAX_BLOCK_SIZE);
+    getcwd(buf, MAX_BLOCK_SIZE);
+    printf("%s\n", buf);
+}
+
+void local_cd(char* dir){
+    if(chdir(dir) == -1){
+        printf("Error: directory not found\n");
+    }
+}
+
+void local_dir(){
+    DIR* dir_p;
+    struct dirent* dirent_p;
+    char files_buf[MAX_BLOCK_SIZE];
+
+    memset(files_buf, 0, MAX_BLOCK_SIZE);
+
+    if((dir_p = opendir(".")) == NULL){
+        perror("opening dir");
+    } else {
+        //strcat(files_buf, "\n");
+        while( (dirent_p = readdir(dir_p)) != NULL){
+            if(strcmp(dirent_p->d_name, ".") == 0)
+                continue;
+            
+            if(strcmp(dirent_p->d_name, "..") == 0)
+                continue;
+
+            strcat(files_buf, dirent_p->d_name);
+            strcat(files_buf, "\n");
+            
+        }
+
+        printf("%s", files_buf);
+    }
+}
+
+void send_dir(int sock_d){
+    char op, ack;
+    int nr, nw;
+
+    if(write_opcode(sock_d, DIR_OPCODE) <= 0){
+        printf("Failed to send dir\n"); return;
+    }
+
+    if(read_opcode(sock_d, &op) <= 0){
+        printf("Failed to send OpCode\n"); return;
+    }
+
+    if(op != DIR_OPCODE){
+        printf("Wrong OpCode\n"); return;
+    }
+
+    if(read_fournetbs(sock_d, &nr) <= 0){
+        printf("Failed to read filesize\n"); return;
+    }
+
+    char files_buf[nr+1];
+
+    if(readn(sock_d, files_buf, nr) <= 0){
+        printf("Failed to read directory\n"); return;
+    }
+
+    files_buf[nr] = '\0';
+
+    printf("%s\n", files_buf);
+
+
+}
 
 int main(int argc, char** argv)
 {
@@ -31,7 +105,6 @@ int main(int argc, char** argv)
     struct hostent *hp;             // host information
     char* tokens[MAX_NUM_TOKENS];   // tokens of the input command
     char temp_buf[MAX_BLOCK_SIZE];  // Create a temp buffer since the tokenisation will malform the input string
-    char files_buf[MAX_BLOCK_SIZE];
     int num_tokens;                 // Number of tokens after a line has been tokenised
     int nw, nr;
 
@@ -40,7 +113,6 @@ int main(int argc, char** argv)
         // If no host:port is provided, assume local host 
         gethostname(host, sizeof(host));
         port = SERV_TCP_PORT;   
-        printf("Hostname: %s", host);
     }
     else if(argc == 2){
         // Use the host/IP provided
@@ -95,46 +167,22 @@ int main(int argc, char** argv)
             memset(temp_buf, 0, MAX_BLOCK_SIZE);
             memcpy(temp_buf, buf, MAX_BLOCK_SIZE);
             num_tokens = tokenise(temp_buf, tokens);
-            /* LOCAL COMMAND HANDLER */
-            // TODO: Refactor handlers into their own module perhaps?
+
             if(strcmp(tokens[0], "lpwd") == 0){
-                memset(buf, 0, MAX_BLOCK_SIZE);
-                getcwd(buf, MAX_BLOCK_SIZE);
-                printf("%s\n", buf);
+                local_pwd();
             }
             else if(strcmp(tokens[0], "lcd") == 0){
                 if(num_tokens == 2){
-                    if(chdir(tokens[1]) == -1){
-                        printf("Error: directory not found\n");
-                    }
+                    local_cd(tokens[1]);
                 } else {
                     printf("Invalid command. Usage is: lcd [<path>]\n");
                 }
             }
             else if(strcmp(tokens[0], "ldir") == 0){
-                DIR* dir_p;
-                struct dirent* dirent_p;
-
-                memset(files_buf, 0, MAX_BLOCK_SIZE);
-
-                if((dir_p = opendir(".")) == NULL){
-                    perror("opening dir");
-                } else {
-                    //strcat(files_buf, "\n");
-                    while( (dirent_p = readdir(dir_p)) != NULL){
-                        if(strcmp(dirent_p->d_name, ".") == 0)
-                            continue;
-                        
-                        if(strcmp(dirent_p->d_name, "..") == 0)
-                            continue;
-
-                        strcat(files_buf, dirent_p->d_name);
-                        strcat(files_buf, "\n");
-                        
-                    }
-
-                    printf("%s", files_buf);
-                }
+                local_dir();
+            }
+            else if(strcmp(tokens[0], "dir") == 0){
+                send_dir(sock_d);
             }
         }
     }

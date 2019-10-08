@@ -3,7 +3,7 @@
 myftp: client.o token.o stream.o
 	gcc client.o token.o stream.o -o myftp
 
-client.o: client.c token.h stream.h
+client.o: client.c token.h stream.h protocol.h
 	gcc -c client.c
 
 token.o: token.c token.h
