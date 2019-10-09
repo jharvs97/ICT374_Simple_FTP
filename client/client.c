@@ -65,7 +65,8 @@ void local_dir(){
 
 void send_dir(int sock_d){
     char op = 0;
-    int nr=0, nw=0;
+    short nr=0; 
+    int nw=0;
     char files_buf[MAX_BLOCK_SIZE]; 
 
     // Write the OpCode 
@@ -80,12 +81,12 @@ void send_dir(int sock_d){
     }
 
     // Read the length of dir string
-    if(read_fournetbs(sock_d, &nr) < 0){
+    if(read_twonetbs(sock_d, &nr) < 0){
         printf("Failed to read filesize\n"); return;
     }
 
     // Read in the bytes of the dir string
-    if(readn(sock_d, files_buf, nr) < 0){
+    if(readn(sock_d, files_buf, (int) nr) < 0){
         printf("Failed to read directory\n"); return;
     }
 
@@ -97,7 +98,7 @@ void send_dir(int sock_d){
 void send_pwd(int sock_d){
 
     char op;
-    int len;
+    short len;
 
     if(write_opcode(sock_d, PWD_OPCODE) < 0){
         printf("Failed to send OpCode!\n"); return;
@@ -111,13 +112,13 @@ void send_pwd(int sock_d){
         printf("Wrong OpCode recieved\n"); return;
     }
 
-    if(read_fournetbs(sock_d, &len) < 0){
+    if(read_twonetbs(sock_d, &len) < 0){
         printf("Failed to read message length\n"); return;
     }
     
     char pwd_buf[len+1];
 
-    if(readn(sock_d, pwd_buf, len) < 0){
+    if(readn(sock_d, pwd_buf, (int) len) < 0){
         printf("Failed to read pwd from server!\n"); return;
     }
 
@@ -136,7 +137,7 @@ void send_cd(int sock_d, char* dir){
         printf("Failed to send OpCode!\n"); return;
     }
 
-    if(write_fournetbs(sock_d, len) < 0){
+    if(write_twonetbs(sock_d, (short) len) < 0){
         printf("Failed to write buffer length\n"); return;
     }
 
@@ -167,9 +168,11 @@ void send_cd(int sock_d, char* dir){
     }
 
     return;
-
 }
 
+void send_put(int sock_d){
+
+}
 int main(int argc, char** argv)
 {
     int sock_d;                     // Socket descriptor
@@ -266,11 +269,17 @@ int main(int argc, char** argv)
             }
             else if(strcmp(tokens[0], "cd") == 0){
                 if(num_tokens == 2){
-                    printf("%s\n", tokens[1]);
                     send_cd(sock_d, tokens[1]);
                 }
                 else {
                     printf("Invalid command. Usage is: cd [<path>]\n");
+                }
+            }
+            else if(strcmp(tokens[0], "put") == 0){
+                if(num_tokens == 2){
+                    send_put(sock_d);
+                } else {
+                    printf("Invalid command. Usage is: put [<filename>]\n");
                 }
             }
         }
