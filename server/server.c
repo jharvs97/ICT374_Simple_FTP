@@ -54,6 +54,31 @@ void serve_dir(int sock_d){
     return;
 }
 
+void serve_pwd(int sock_d){
+    int len;
+
+    char buf[256];
+    getcwd(buf, sizeof(buf));
+    // printf("%s\n", buf);
+
+    len = strlen(buf);
+    buf[len] = '\0';
+
+    if(write_opcode(sock_d, PWD_OPCODE) < 0){
+        return;
+    }
+
+    if(write_fournetbs(sock_d, len) < 0){
+        return;
+    }
+
+    if(writen(sock_d, buf, len) < 0){
+        return;
+    }
+
+    return;
+}
+
 int main(int argc, char** argv)
 {
     int sock_d;                     // Socket descriptor
@@ -148,6 +173,9 @@ void server_a_client(int sock_d)
         switch(opcode){
             case DIR_OPCODE:
                 serve_dir(sock_d);
+                break;
+            case PWD_OPCODE:
+                serve_pwd(sock_d);
                 break;
             default:
                 break;
