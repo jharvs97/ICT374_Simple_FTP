@@ -31,3 +31,14 @@ int readn(int fd, char *buf, int bufsize);
  */           
 int writen(int fd, char *buf, int nbytes);
 
+int write_opcode(int fd, char code);
+
+int read_opcode(int fd, char* code);
+
+int write_twonetbs(int fd, short data);
+
+int read_twonetbs(int fd, short *data);
+
+int write_fournetbs(int fd, int data);
+
+int read_fournetbs(int fd, int *data);

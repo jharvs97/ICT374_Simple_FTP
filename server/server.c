@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <errno.h>
 #include <signal.h>
 #include <sys/types.h>
@@ -11,15 +12,115 @@
 #include <sys/wait.h>
 #include <netinet/in.h>
 #include <dirent.h>
+#include <arpa/inet.h>
 
 // My headers
 #include "daemon.h"
-#include "handlers.h"
 #include "stream.h"
+#include "protocol.h"
 
 #define SERV_TCP_PORT 40005
 
 void server_a_client(int sock_d);
+
+void serve_dir(int sock_d){
+
+    int len,nw;
+    DIR* dir_p;
+    struct dirent* ent_p;
+    char files_buf[MAX_BLOCK_SIZE];
+    bzero(files_buf, MAX_BLOCK_SIZE);
+
+    dir_p = opendir(".");
+    if(dir_p){
+        while((ent_p = readdir(dir_p)) != 0){
+            strcat(files_buf, ent_p->d_name);
+            strcat(files_buf, "\n");
+        }
+        len = strlen(files_buf);
+        files_buf[len-1] = '\0';
+        closedir(dir_p);
+    }
+
+    if((nw = write_opcode(sock_d, DIR_OPCODE)) < 0){
+        return;
+    }
+
+    if((nw = write_fournetbs(sock_d, len)) < 0){
+        return;
+    }
+
+    if((nw = writen(sock_d, files_buf, len)) < 0){
+        return;
+    }
+    
+    return;
+}
+
+void serve_pwd(int sock_d){
+    int len;
+
+    char buf[256];
+    // Ensure the buffer is empty
+    bzero(buf, 256);
+    getcwd(buf, sizeof(buf));
+
+    if(write_opcode(sock_d, PWD_OPCODE) < 0){
+        return;
+    }
+
+    if(write_fournetbs(sock_d, strlen(buf)) < 0){
+        return;
+    }
+
+    if(writen(sock_d, buf, strlen(buf)) < 0){
+        return;
+    }
+
+    return;
+}
+
+void serve_cd(int sock_d){
+    int len;
+    char dir[256];
+    // Ensure the buffer is empty
+    bzero(dir, 256);
+    char ack;
+
+    // Read in length of the directory buffer
+    if(read_fournetbs(sock_d, &len) < 0){
+        return;
+    }
+
+    // Read the dir buffer
+    if(readn(sock_d, dir, len) < 0){
+        return;
+    }
+
+    printf("len = %d\n", len);
+    printf("DIR = %s\n", dir);
+
+    //dir[strlen(dir)-1] = '\0';
+
+    if(strlen(dir) > 0){
+        if(chdir(dir) == -1){
+            ack = CD_ACK_NOEXIST;
+        } else {
+            ack = CD_ACK_SUCCESS;
+        }
+    }
+
+    if(write_opcode(sock_d, CD_OPCODE) < 0){
+        return;
+    }
+
+    if(write_opcode(sock_d, ack) < 0){
+        return;
+    }
+    
+    
+    return;
+}
 
 int main(int argc, char** argv)
 {
@@ -98,16 +199,34 @@ int main(int argc, char** argv)
 void server_a_client(int sock_d)
 {
     int nr, nw;
-    char buf[MAX_BLOCK_SIZE];
+    char opcode;
 
-    char return_msg[MAX_BLOCK_SIZE] = "Hello from server!";
-
-    while(1){
+    while(read_opcode(sock_d, &opcode) > 0){
         /*read data from client*/
-        if((nr = readn(sock_d, buf, MAX_BLOCK_SIZE)) <= 0){
-            return; /* connection broke down */
-        }
+        // if((nr = readn(sock_d, buf, MAX_BLOCK_SIZE)) <= 0){
+        //     return; /* connection broke down */
+        // }
+        // nw = writen(sock_d, return_msg, sizeof(return_msg));
 
-        nw = writen(sock_d, return_msg, sizeof(return_msg));
+        /* Read OpCode from client */
+        // if( (nr = read_opcode(sock_d, &opcode)) <= 0){
+        //     return;files_bu
+        // }
+
+        switch(opcode){
+            case DIR_OPCODE:
+                serve_dir(sock_d);
+                break;
+            case PWD_OPCODE:
+                serve_pwd(sock_d);
+                break;
+            case CD_OPCODE:
+                serve_cd(sock_d);
+                break;
+            default:
+                break;
+        }
+        
     }
 }
+

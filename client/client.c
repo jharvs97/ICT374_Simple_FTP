@@ -1,4 +1,5 @@
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -14,12 +15,160 @@
 // My headers
 #include "token.h"
 #include "stream.h"
+#include "protocol.h"
 
 #define SERV_TCP_PORT 40005
 
 #define h_addr h_addr_list[0]
 
 #define u_long unsigned long
+
+void local_pwd(){
+    char buf[MAX_BLOCK_SIZE];
+    memset(buf, 0, MAX_BLOCK_SIZE);
+    getcwd(buf, MAX_BLOCK_SIZE);
+    printf("%s\n", buf);
+}
+
+void local_cd(char* dir){
+    if(chdir(dir) == -1){
+        printf("Error: directory not found\n");
+    }
+}
+
+void local_dir(){
+    DIR* dir_p;
+    struct dirent* dirent_p;
+    char files_buf[MAX_BLOCK_SIZE];
+
+    memset(files_buf, 0, MAX_BLOCK_SIZE);
+
+    if((dir_p = opendir(".")) == NULL){
+        perror("opening dir");
+    } else {
+        //strcat(files_buf, "\n");
+        while( (dirent_p = readdir(dir_p)) != NULL){
+            if(strcmp(dirent_p->d_name, ".") == 0)
+                continue;
+            
+            if(strcmp(dirent_p->d_name, "..") == 0)
+                continue;
+
+            strcat(files_buf, dirent_p->d_name);
+            strcat(files_buf, "\n");
+            
+        }
+
+        printf("%s", files_buf);
+    }
+}
+
+void send_dir(int sock_d){
+    char op = 0;
+    int nr=0, nw=0;
+    char files_buf[MAX_BLOCK_SIZE]; 
+
+    // Write the OpCode 
+    if(write_opcode(sock_d, DIR_OPCODE) < 0){
+        printf("Failed to send dir\n"); return;
+    }
+
+    // Read the OpCode from server
+    if(read_opcode(sock_d, &op) < 0){
+        printf("%c\n", op);
+        printf("Failed to read OpCode\n"); return;
+    }
+
+    // Read the length of dir string
+    if(read_fournetbs(sock_d, &nr) < 0){
+        printf("Failed to read filesize\n"); return;
+    }
+
+    // Read in the bytes of the dir string
+    if(readn(sock_d, files_buf, nr) < 0){
+        printf("Failed to read directory\n"); return;
+    }
+
+    files_buf[nr] = '\0';
+
+    printf("%s\n", files_buf);
+}
+
+void send_pwd(int sock_d){
+
+    char op;
+    int len;
+
+    if(write_opcode(sock_d, PWD_OPCODE) < 0){
+        printf("Failed to send OpCode!\n"); return;
+    }
+
+    if(read_opcode(sock_d, &op) < 0){
+        printf("Failed to read OpCode!\n"); return;
+    }
+
+    if(op != PWD_OPCODE){
+        printf("Wrong OpCode recieved\n"); return;
+    }
+
+    if(read_fournetbs(sock_d, &len) < 0){
+        printf("Failed to read message length\n"); return;
+    }
+    
+    char pwd_buf[len+1];
+
+    if(readn(sock_d, pwd_buf, len) < 0){
+        printf("Failed to read pwd from server!\n"); return;
+    }
+
+    pwd_buf[len] = '\0';
+
+    printf("%s\n", pwd_buf);
+}
+
+void send_cd(int sock_d, char* dir){
+
+    char op;
+    char ack;
+    int len = strlen(dir);
+
+    if(write_opcode(sock_d, CD_OPCODE) < 0){
+        printf("Failed to send OpCode!\n"); return;
+    }
+
+    if(write_fournetbs(sock_d, len) < 0){
+        printf("Failed to write buffer length\n"); return;
+    }
+
+    if(writen(sock_d, dir, len) < 0){
+        printf("Failed writing buffer\n"); return;
+    }
+
+    if(read_opcode(sock_d, &op) < 0){
+        printf("Failed reading OpCode\n"); return;
+    }
+
+    if(op != CD_OPCODE){
+        printf("Wrong OpCode!\n"); return;
+    }
+
+    if(read_opcode(sock_d, &ack) < 0){
+        printf("Failed reading Ack code\n"); return;
+    }
+
+    switch(ack){
+        case CD_ACK_SUCCESS:
+            break;
+        case CD_ACK_NOEXIST:
+            printf("Directory doesn't exist!\n");
+            break;
+        default:
+            break;
+    }
+
+    return;
+
+}
 
 int main(int argc, char** argv)
 {
@@ -31,7 +180,6 @@ int main(int argc, char** argv)
     struct hostent *hp;             // host information
     char* tokens[MAX_NUM_TOKENS];   // tokens of the input command
     char temp_buf[MAX_BLOCK_SIZE];  // Create a temp buffer since the tokenisation will malform the input string
-    char files_buf[MAX_BLOCK_SIZE];
     int num_tokens;                 // Number of tokens after a line has been tokenised
     int nw, nr;
 
@@ -40,7 +188,6 @@ int main(int argc, char** argv)
         // If no host:port is provided, assume local host 
         gethostname(host, sizeof(host));
         port = SERV_TCP_PORT;   
-        printf("Hostname: %s", host);
     }
     else if(argc == 2){
         // Use the host/IP provided
@@ -74,6 +221,9 @@ int main(int argc, char** argv)
     }
 
     while(1){
+        memset(buf, 0, sizeof(buf));
+        //memset(temp_buf, 0, sizeof(temp_buf));
+
         printf("$ ");
 
         fgets(buf, sizeof(buf), stdin);
@@ -92,48 +242,35 @@ int main(int argc, char** argv)
 
         if(nr > 0){
             
-            memset(temp_buf, 0, MAX_BLOCK_SIZE);
-            memcpy(temp_buf, buf, MAX_BLOCK_SIZE);
-            num_tokens = tokenise(temp_buf, tokens);
-            /* LOCAL COMMAND HANDLER */
-            // TODO: Refactor handlers into their own module perhaps?
+            //strcpy(temp_buf, buf);
+            num_tokens = tokenise(buf, tokens);
+
             if(strcmp(tokens[0], "lpwd") == 0){
-                memset(buf, 0, MAX_BLOCK_SIZE);
-                getcwd(buf, MAX_BLOCK_SIZE);
-                printf("%s\n", buf);
+                local_pwd();
             }
             else if(strcmp(tokens[0], "lcd") == 0){
                 if(num_tokens == 2){
-                    if(chdir(tokens[1]) == -1){
-                        printf("Error: directory not found\n");
-                    }
+                    local_cd(tokens[1]);
                 } else {
                     printf("Invalid command. Usage is: lcd [<path>]\n");
                 }
             }
             else if(strcmp(tokens[0], "ldir") == 0){
-                DIR* dir_p;
-                struct dirent* dirent_p;
-
-                memset(files_buf, 0, MAX_BLOCK_SIZE);
-
-                if((dir_p = opendir(".")) == NULL){
-                    perror("opening dir");
-                } else {
-                    //strcat(files_buf, "\n");
-                    while( (dirent_p = readdir(dir_p)) != NULL){
-                        if(strcmp(dirent_p->d_name, ".") == 0)
-                            continue;
-                        
-                        if(strcmp(dirent_p->d_name, "..") == 0)
-                            continue;
-
-                        strcat(files_buf, dirent_p->d_name);
-                        strcat(files_buf, "\n");
-                        
-                    }
-
-                    printf("%s", files_buf);
+                local_dir();
+            }
+            else if(strcmp(tokens[0], "dir") == 0){
+                send_dir(sock_d);
+            }
+            else if(strcmp(tokens[0], "pwd") == 0){
+                send_pwd(sock_d);   
+            }
+            else if(strcmp(tokens[0], "cd") == 0){
+                if(num_tokens == 2){
+                    printf("%s\n", tokens[1]);
+                    send_cd(sock_d, tokens[1]);
+                }
+                else {
+                    printf("Invalid command. Usage is: cd [<path>]\n");
                 }
             }
         }
