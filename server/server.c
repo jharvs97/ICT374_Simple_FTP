@@ -47,7 +47,7 @@ void serve_dir(int sock_d){
         return;
     }
 
-    if((nw = write(sock_d, files_buf, len)) < 0){
+    if((nw = writen(sock_d, files_buf, len)) < 0){
         return;
     }
 
@@ -142,7 +142,7 @@ void server_a_client(int sock_d)
 
         /* Read OpCode from client */
         // if( (nr = read_opcode(sock_d, &opcode)) <= 0){
-        //     return;
+        //     return;files_bu
         // }
 
         switch(opcode){

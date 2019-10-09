@@ -31,7 +31,7 @@ int readn(int fd, char *buf, int bufsize)
     // return (len); 
 
     int nr=0, n=0;
-    for(n=0; n < bufsize && n > 0; n += nr){
+    for(n=0; n < bufsize; n += nr){
         if ((nr = read(fd, buf+n, bufsize-n)) <= 0){
             return (nr);
         }
@@ -92,7 +92,7 @@ int write_twonetbs(int fd, short data){
 
     uint16_t ns_data = htons(data);
 
-    int nw = write(fd, &ns_data, 2);
+    int nw = write(fd,(char*) &ns_data, 2);
 
     if(nw != 2) return -1;
 
@@ -105,7 +105,7 @@ int read_twonetbs(int fd, short *data){
     int nr;
     
 
-    if( (nr = read(fd, &d, 2)) != 2) return -1;
+    if( (nr = read(fd,(char*) &d, 2)) != 2) return -1;
 
     *data = ntohs(d);
     
@@ -115,7 +115,7 @@ int read_twonetbs(int fd, short *data){
 int write_fournetbs(int fd, int data){
     uint32_t d = htonl(data);
 
-    int nw = write(fd,&d, 4);
+    int nw = write(fd,(char*)&d, 4);
 
     if(nw != 4) return -1;
 
@@ -125,7 +125,7 @@ int write_fournetbs(int fd, int data){
 int read_fournetbs(int fd, int *data){
     uint32_t d = 0, nr;
 
-    if( (nr = read(fd, &d, 4)) != 4) return -1;
+    if( (nr = read(fd, (char*)&d, 4)) != 4) return -1;
 
     *data = ntohl(d);
 

@@ -89,15 +89,13 @@ void send_dir(int sock_d){
     bzero(files_buf, nr);
 
     // Read in the bytes of the dir string
-    if(read(sock_d, files_buf, nr) < 0){
+    if(readn(sock_d, files_buf, nr) < 0){
         printf("Failed to read directory\n"); return;
     }
 
     files_buf[nr] = '\0';
 
     printf("%s\n", files_buf);
-
-
 }
 
 int main(int argc, char** argv)
