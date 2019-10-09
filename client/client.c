@@ -1,4 +1,5 @@
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -63,28 +64,32 @@ void local_dir(){
 }
 
 void send_dir(int sock_d){
-    char op, ack;
-    int nr, nw;
+    char op = 0;
+    int nr=0, nw=0;
+    //char files_buf[MAX_BLOCK_SIZE]; 
 
-    if(write_opcode(sock_d, DIR_OPCODE) <= 0){
+    // Write the OpCode 
+    if(write_opcode(sock_d, DIR_OPCODE) < 0){
         printf("Failed to send dir\n"); return;
     }
 
-    if(read_opcode(sock_d, &op) <= 0){
-        printf("Failed to send OpCode\n"); return;
+    // Read the OpCode from server
+    if(read_opcode(sock_d, &op) < 0){
+        printf("%c\n", op);
+        printf("Failed to read OpCode\n"); return;
     }
 
-    if(op != DIR_OPCODE){
-        printf("Wrong OpCode\n"); return;
-    }
-
-    if(read_fournetbs(sock_d, &nr) <= 0){
+    // Read the length of dir string
+    if(read_fournetbs(sock_d, &nr) < 0){
         printf("Failed to read filesize\n"); return;
     }
 
+    // Create buffer for the dir string
     char files_buf[nr+1];
+    bzero(files_buf, nr);
 
-    if(readn(sock_d, files_buf, nr) <= 0){
+    // Read in the bytes of the dir string
+    if(read(sock_d, files_buf, nr) < 0){
         printf("Failed to read directory\n"); return;
     }
 
@@ -164,8 +169,7 @@ int main(int argc, char** argv)
 
         if(nr > 0){
             
-            memset(temp_buf, 0, MAX_BLOCK_SIZE);
-            memcpy(temp_buf, buf, MAX_BLOCK_SIZE);
+            strcpy(temp_buf, buf);
             num_tokens = tokenise(temp_buf, tokens);
 
             if(strcmp(tokens[0], "lpwd") == 0){

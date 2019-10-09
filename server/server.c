@@ -32,22 +32,22 @@ void serve_dir(int sock_d){
     if(dir_p){
         while((ent_p = readdir(dir_p)) != 0){
             strcat(files_buf, ent_p->d_name);
-            strcat(files_buf, ent_p->d_name);
+            strcat(files_buf, "\n");
         }
         len = strlen(files_buf);
         files_buf[len-1] = '\0';
         closedir(dir_p);
     }
 
-    if((nw = write_opcode(sock_d, DIR_OPCODE)) <= 0){
+    if((nw = write_opcode(sock_d, DIR_OPCODE)) < 0){
         return;
     }
 
-    if((nw = write_fournetbs(sock_d, len)) <= 0){
+    if((nw = write_fournetbs(sock_d, len)) < 0){
         return;
     }
 
-    if((nw = writen(sock_d, files_buf, len)) <= 0){
+    if((nw = write(sock_d, files_buf, len)) < 0){
         return;
     }
 
@@ -131,11 +131,9 @@ int main(int argc, char** argv)
 void server_a_client(int sock_d)
 {
     int nr, nw;
-    char buf[MAX_BLOCK_SIZE];
     char opcode;
-    char return_msg[MAX_BLOCK_SIZE] = "Hello from server!";
 
-    while(1){
+    while(read_opcode(sock_d, &opcode) > 0){
         /*read data from client*/
         // if((nr = readn(sock_d, buf, MAX_BLOCK_SIZE)) <= 0){
         //     return; /* connection broke down */
@@ -143,13 +141,15 @@ void server_a_client(int sock_d)
         // nw = writen(sock_d, return_msg, sizeof(return_msg));
 
         /* Read OpCode from client */
-        if( (nr = read_opcode(sock_d, &opcode)) <= 0){
-            return;
-        }
+        // if( (nr = read_opcode(sock_d, &opcode)) <= 0){
+        //     return;
+        // }
 
         switch(opcode){
             case DIR_OPCODE:
                 serve_dir(sock_d);
+                break;
+            default:
                 break;
         }
         
