@@ -25,7 +25,8 @@ void server_a_client(int sock_d);
 
 void serve_dir(int sock_d){
 
-    int len,nw;
+    short len;
+    int nw;
     DIR* dir_p;
     struct dirent* ent_p;
     char files_buf[MAX_BLOCK_SIZE];
@@ -37,7 +38,7 @@ void serve_dir(int sock_d){
             strcat(files_buf, ent_p->d_name);
             strcat(files_buf, "\n");
         }
-        len = strlen(files_buf);
+        len = (short) strlen(files_buf);
         files_buf[len-1] = '\0';
         closedir(dir_p);
     }
@@ -46,7 +47,7 @@ void serve_dir(int sock_d){
         return;
     }
 
-    if((nw = write_fournetbs(sock_d, len)) < 0){
+    if((nw = write_twonetbs(sock_d, len)) < 0){
         return;
     }
 
@@ -69,7 +70,7 @@ void serve_pwd(int sock_d){
         return;
     }
 
-    if(write_fournetbs(sock_d, strlen(buf)) < 0){
+    if(write_twonetbs(sock_d, (short) strlen(buf)) < 0){
         return;
     }
 
@@ -81,24 +82,24 @@ void serve_pwd(int sock_d){
 }
 
 void serve_cd(int sock_d){
-    int len;
+    short len;
     char dir[256];
     // Ensure the buffer is empty
     bzero(dir, 256);
     char ack;
 
     // Read in length of the directory buffer
-    if(read_fournetbs(sock_d, &len) < 0){
+    if(read_twonetbs(sock_d, &len) < 0){
         return;
     }
 
     // Read the dir buffer
-    if(readn(sock_d, dir, len) < 0){
+    if(readn(sock_d, dir, (int) len) < 0){
         return;
     }
 
-    printf("len = %d\n", len);
-    printf("DIR = %s\n", dir);
+    // printf("len = %d\n", len);
+    // printf("DIR = %s\n", dir);
 
     //dir[strlen(dir)-1] = '\0';
 
@@ -120,6 +121,10 @@ void serve_cd(int sock_d){
     
     
     return;
+}
+
+void serve_put(int sock_d){
+
 }
 
 int main(int argc, char** argv)
