@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <errno.h>
 #include <signal.h>
 #include <sys/types.h>
@@ -11,6 +12,7 @@
 #include <sys/wait.h>
 #include <netinet/in.h>
 #include <dirent.h>
+#include <arpa/inet.h>
 
 // My headers
 #include "daemon.h"
@@ -27,6 +29,7 @@ void serve_dir(int sock_d){
     DIR* dir_p;
     struct dirent* ent_p;
     char files_buf[MAX_BLOCK_SIZE];
+    bzero(files_buf, MAX_BLOCK_SIZE);
 
     dir_p = opendir(".");
     if(dir_p){
@@ -50,7 +53,7 @@ void serve_dir(int sock_d){
     if((nw = writen(sock_d, files_buf, len)) < 0){
         return;
     }
-
+    
     return;
 }
 
@@ -58,24 +61,64 @@ void serve_pwd(int sock_d){
     int len;
 
     char buf[256];
+    // Ensure the buffer is empty
+    bzero(buf, 256);
     getcwd(buf, sizeof(buf));
-    // printf("%s\n", buf);
-
-    len = strlen(buf);
-    buf[len] = '\0';
 
     if(write_opcode(sock_d, PWD_OPCODE) < 0){
         return;
     }
 
-    if(write_fournetbs(sock_d, len) < 0){
+    if(write_fournetbs(sock_d, strlen(buf)) < 0){
         return;
     }
 
-    if(writen(sock_d, buf, len) < 0){
+    if(writen(sock_d, buf, strlen(buf)) < 0){
         return;
     }
 
+    return;
+}
+
+void serve_cd(int sock_d){
+    int len;
+    char dir[256];
+    // Ensure the buffer is empty
+    bzero(dir, 256);
+    char ack;
+
+    // Read in length of the directory buffer
+    if(read_fournetbs(sock_d, &len) < 0){
+        return;
+    }
+
+    // Read the dir buffer
+    if(readn(sock_d, dir, len) < 0){
+        return;
+    }
+
+    printf("len = %d\n", len);
+    printf("DIR = %s\n", dir);
+
+    //dir[strlen(dir)-1] = '\0';
+
+    if(strlen(dir) > 0){
+        if(chdir(dir) == -1){
+            ack = CD_ACK_NOEXIST;
+        } else {
+            ack = CD_ACK_SUCCESS;
+        }
+    }
+
+    if(write_opcode(sock_d, CD_OPCODE) < 0){
+        return;
+    }
+
+    if(write_opcode(sock_d, ack) < 0){
+        return;
+    }
+    
+    
     return;
 }
 
@@ -176,6 +219,9 @@ void server_a_client(int sock_d)
                 break;
             case PWD_OPCODE:
                 serve_pwd(sock_d);
+                break;
+            case CD_OPCODE:
+                serve_cd(sock_d);
                 break;
             default:
                 break;

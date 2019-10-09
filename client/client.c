@@ -66,7 +66,7 @@ void local_dir(){
 void send_dir(int sock_d){
     char op = 0;
     int nr=0, nw=0;
-    //char files_buf[MAX_BLOCK_SIZE]; 
+    char files_buf[MAX_BLOCK_SIZE]; 
 
     // Write the OpCode 
     if(write_opcode(sock_d, DIR_OPCODE) < 0){
@@ -83,10 +83,6 @@ void send_dir(int sock_d){
     if(read_fournetbs(sock_d, &nr) < 0){
         printf("Failed to read filesize\n"); return;
     }
-
-    // Create buffer for the dir string
-    char files_buf[nr+1];
-    bzero(files_buf, nr);
 
     // Read in the bytes of the dir string
     if(readn(sock_d, files_buf, nr) < 0){
@@ -128,6 +124,50 @@ void send_pwd(int sock_d){
     pwd_buf[len] = '\0';
 
     printf("%s\n", pwd_buf);
+}
+
+void send_cd(int sock_d, char* dir){
+
+    char op;
+    char ack;
+    int len = strlen(dir);
+
+    if(write_opcode(sock_d, CD_OPCODE) < 0){
+        printf("Failed to send OpCode!\n"); return;
+    }
+
+    if(write_fournetbs(sock_d, len) < 0){
+        printf("Failed to write buffer length\n"); return;
+    }
+
+    if(writen(sock_d, dir, len) < 0){
+        printf("Failed writing buffer\n"); return;
+    }
+
+    if(read_opcode(sock_d, &op) < 0){
+        printf("Failed reading OpCode\n"); return;
+    }
+
+    if(op != CD_OPCODE){
+        printf("Wrong OpCode!\n"); return;
+    }
+
+    if(read_opcode(sock_d, &ack) < 0){
+        printf("Failed reading Ack code\n"); return;
+    }
+
+    switch(ack){
+        case CD_ACK_SUCCESS:
+            break;
+        case CD_ACK_NOEXIST:
+            printf("Directory doesn't exist!\n");
+            break;
+        default:
+            break;
+    }
+
+    return;
+
 }
 
 int main(int argc, char** argv)
@@ -181,6 +221,9 @@ int main(int argc, char** argv)
     }
 
     while(1){
+        memset(buf, 0, sizeof(buf));
+        //memset(temp_buf, 0, sizeof(temp_buf));
+
         printf("$ ");
 
         fgets(buf, sizeof(buf), stdin);
@@ -199,8 +242,8 @@ int main(int argc, char** argv)
 
         if(nr > 0){
             
-            strcpy(temp_buf, buf);
-            num_tokens = tokenise(temp_buf, tokens);
+            //strcpy(temp_buf, buf);
+            num_tokens = tokenise(buf, tokens);
 
             if(strcmp(tokens[0], "lpwd") == 0){
                 local_pwd();
@@ -220,6 +263,15 @@ int main(int argc, char** argv)
             }
             else if(strcmp(tokens[0], "pwd") == 0){
                 send_pwd(sock_d);   
+            }
+            else if(strcmp(tokens[0], "cd") == 0){
+                if(num_tokens == 2){
+                    printf("%s\n", tokens[1]);
+                    send_cd(sock_d, tokens[1]);
+                }
+                else {
+                    printf("Invalid command. Usage is: cd [<path>]\n");
+                }
             }
         }
     }
