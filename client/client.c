@@ -98,6 +98,38 @@ void send_dir(int sock_d){
     printf("%s\n", files_buf);
 }
 
+void send_pwd(int sock_d){
+
+    char op;
+    int len;
+
+    if(write_opcode(sock_d, PWD_OPCODE) < 0){
+        printf("Failed to send OpCode!\n"); return;
+    }
+
+    if(read_opcode(sock_d, &op) < 0){
+        printf("Failed to read OpCode!\n"); return;
+    }
+
+    if(op != PWD_OPCODE){
+        printf("Wrong OpCode recieved\n"); return;
+    }
+
+    if(read_fournetbs(sock_d, &len) < 0){
+        printf("Failed to read message length\n"); return;
+    }
+    
+    char pwd_buf[len+1];
+
+    if(readn(sock_d, pwd_buf, len) < 0){
+        printf("Failed to read pwd from server!\n"); return;
+    }
+
+    pwd_buf[len] = '\0';
+
+    printf("%s\n", pwd_buf);
+}
+
 int main(int argc, char** argv)
 {
     int sock_d;                     // Socket descriptor
@@ -185,6 +217,9 @@ int main(int argc, char** argv)
             }
             else if(strcmp(tokens[0], "dir") == 0){
                 send_dir(sock_d);
+            }
+            else if(strcmp(tokens[0], "pwd") == 0){
+                send_pwd(sock_d);   
             }
         }
     }
