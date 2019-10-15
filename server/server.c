@@ -124,6 +124,96 @@ void serve_cd(int sock_d){
 }
 
 void serve_put(int sock_d){
+    short len;
+    char filename[256];
+    char *buf = malloc(MAX_BLOCK_SIZE);
+    // Ensure the buffer is empty
+    bzero(filename, 256);
+    bzero(buf, MAX_BLOCK_SIZE);
+    char ack;
+
+    // Read in length of the filename buffer
+    if(read_twonetbs(sock_d, &len) < 0){
+        return;
+    }
+
+    // Read the filename buffer
+    if(readn(sock_d, filename, (int) len) < 0){
+        return;
+    }
+
+    // printf("len = %d\n", len);
+    // printf("DIR = %s\n", dir);
+
+    //dir[strlen(dir)-1] = '\0';
+
+    if(strlen(filename) > 0){
+        char *fname = filename;
+        FILE *fstr;
+	
+	//try and open a new file, or open and truncate
+	//if fails send error flag
+	fstr = fopen(fname, "w" );
+	if (fstr == NULL){
+		if(write_opcode(sock_d, PUT_STATUS_ERR) < 0){
+                	return;
+		}
+        }
+	fclose(fstr);
+	//then close new zero byte file and open in append mode
+	//if fails send error flag
+	fstr = fopen(fname, "a");
+	if (fstr == NULL){
+		if(write_opcode(sock_d, PUT_STATUS_OK) < 0){
+                        return;
+                }
+	}
+ 	//otherwise, all okay	
+	if(write_opcode(sock_d, PUT_STATUS_OK) < 0){
+        	return;
+    	}
+	
+	while (len > 0){
+		read_twonetbs(sock_d, &len);
+		if (len > 0){
+			readn(sock_d, buf, (int) len);
+			fwrite(buf, 1, len, fstr);
+			write_opcode(sock_d, PUT_STATUS_OK);
+		}
+        	
+    	}
+	fclose(fstr);
+    }
+
+
+	//if(readn(sock_d, buf, (int) len) < 0){
+        //	return;
+    	//}
+
+		
+
+	
+
+	    
+	    
+	//    if(chdir(dir) == -1){
+        //    ack = CD_ACK_NOEXIST;
+        //} else {
+        //    ack = CD_ACK_SUCCESS;
+       /// }
+    //}
+
+   // if(write_opcode(sock_d, CD_OPCODE) < 0){
+   //     return;
+   // }
+
+   // if(write_opcode(sock_d, ack) < 0){
+   //     return;
+   // }
+ 
+    free(buf);
+    return;
+
 
 }
 
@@ -227,6 +317,8 @@ void server_a_client(int sock_d)
                 break;
             case CD_OPCODE:
                 serve_cd(sock_d);
+	    case PUT_OPCODE:
+		serve_put(sock_d);
                 break;
             default:
                 break;

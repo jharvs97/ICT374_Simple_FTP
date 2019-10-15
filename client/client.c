@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -170,7 +171,112 @@ void send_cd(int sock_d, char* dir){
     return;
 }
 
-void send_put(int sock_d){
+void send_put(int sock_d, char* filename ){
+
+    char op;
+    char ack;
+    char *buf = malloc(MAX_BLOCK_SIZE);
+    int len = strlen(filename);
+    bzero(buf, MAX_BLOCK_SIZE);
+
+
+    if(write_opcode(sock_d, PUT_OPCODE) < 0){
+        printf("Failed to send OpCode!\n"); return;
+    }
+
+    if(write_twonetbs(sock_d, (short) len) < 0){
+        printf("Failed to write buffer length\n"); return;
+    }
+
+    if(writen(sock_d, filename, len) < 0){
+        printf("Failed writing buffer\n"); return;
+    }
+
+    if(strlen(filename) > 0){
+        char *fname = filename;
+        FILE *fstr;
+        struct stat file_stat;
+	int transfer_remain;
+	int file_offset;
+
+	if(stat(fname, &file_stat) == 0){
+		//get size of transfer in bytes
+		transfer_remain = file_stat.st_size;
+	        //try and open file read only
+        	fstr = fopen(fname, "r" );
+		
+		//wait for indication that the other end has been able to open file for writing
+		if (read_opcode(sock_d, &op) < 0){
+			printf("1 - expected opcode didn't arrive, expected PUT_STATUS_OK\n");
+			return;
+		}
+		if (op != PUT_STATUS_OK){
+			if (op == PUT_STATUS_ERR)
+			{
+				printf ("Could not open for writing: %s - opcode %c\n", fname, op);
+				return;
+			}
+			else{
+				printf ("2 - Received wrong opcode - recieved %c, expected %c\n", op, PUT_STATUS_OK);
+				return;
+			}
+		}
+		printf("Uploading %d bytes..", transfer_remain);
+		while (transfer_remain > 0){
+			printf(".");
+			//fflush pushes the dots to stdout immediately
+			fflush(stdout);
+			if (transfer_remain > MAX_BLOCK_SIZE){
+				fread(buf, 1, MAX_BLOCK_SIZE, fstr);
+				write_twonetbs(sock_d, (short) MAX_BLOCK_SIZE);
+		                writen(sock_d, buf, MAX_BLOCK_SIZE);	
+				transfer_remain = transfer_remain - MAX_BLOCK_SIZE;
+				file_offset = file_offset + MAX_BLOCK_SIZE;
+				if (read_opcode(sock_d, &op) < 0){
+                        		printf("3 - didn't recieve op code\n");
+                        	return;
+                		}
+                		if (op != PUT_STATUS_OK){
+                        		printf ("4 - Transfer issue... abort\n");
+                        	return;
+                		}
+
+			}
+			else
+			{
+				fread(buf, 1, MAX_BLOCK_SIZE, fstr);
+                                write_twonetbs(sock_d, (short) transfer_remain);
+                                writen(sock_d, buf, transfer_remain);
+                                transfer_remain = 0;
+                                file_offset = file_offset + transfer_remain;
+                            	//following zero size write breaks look at other end
+				write_twonetbs(sock_d, (short) transfer_remain);
+				if (read_opcode(sock_d, &op) < 0){
+                                        printf("5 - expected opcode didn't arrive, expected PUT_STATUS_OK\n");
+                                return;
+                                }
+                                if (op != PUT_STATUS_OK){
+                                        printf ("6 - Transfer issue... abort\n");
+                                return;
+                                }
+
+			}
+			
+		}
+		printf("Complete!!\n");
+	}
+
+	else{
+		//could not stat file
+		printf("Could not stat file\n");
+		return;
+	}
+	}
+
+    free(buf);
+
+    return;
+
 
 }
 int main(int argc, char** argv)
@@ -277,7 +383,7 @@ int main(int argc, char** argv)
             }
             else if(strcmp(tokens[0], "put") == 0){
                 if(num_tokens == 2){
-                    send_put(sock_d);
+                    send_put(sock_d, tokens[1]);
                 } else {
                     printf("Invalid command. Usage is: put [<filename>]\n");
                 }
