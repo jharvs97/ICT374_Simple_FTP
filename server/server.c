@@ -197,243 +197,252 @@ void serve_cd(int sock_d){
 }
 
 void serve_put(int sock_d){
-    short chunk;
-    char filename[256];
-    char *block_buf = malloc(MAX_BLOCK_SIZE);
-    short len;
-    char op;
+	short chunk = 0;
+	char filename[256];
+	char *block_buf = malloc(MAX_BLOCK_SIZE);
+	short len = 0;
+	char op = 'A';
 
-    // Ensure the buffers are empty
-    bzero(filename, 256);
-    bzero(block_buf, MAX_BLOCK_SIZE);
+	// Ensure the buffers are empty
+	bzero(filename, 256);
+	bzero(block_buf, MAX_BLOCK_SIZE);
     
 
-    // Read in length of the filename buffer
-    if(read_twonetbs(sock_d, &len) < 0){
+	// Read in length of the filename buffer
+	if(read_twonetbs(sock_d, &len) < 0){
         free(block_buf);
 	    return;
-    }
-
-    // Read the filename buffer
-    if(readn(sock_d, filename, (int) len) < 0){
-        free(block_buf);
-	return;
-    }
-
-    if(strlen(filename) > 0){
-        char *fname = filename;
-        FILE *fstr;
-	
-	//if remote end can open the file ready for sending, proceed
-	 if (read_opcode(sock_d, &op) < 0){
-                 free(block_buf);
-		 return;
-         }
-	 if (op != PUT_STATUS_OK){
-		 //anything other than an OKAY abort
-		 free(block_buf);
-		 return;
-	 }
-	
-	//try and open a new file, or open and truncate
-	//if fails send error flag
-	fstr = fopen(fname, "w" );
-	if (fstr == NULL){
-		if(write_opcode(sock_d, PUT_STATUS_ERR) < 0){
-			free(block_buf);
-			return;
-		}
-		free(block_buf);
-		return;
-        }
-	//then close new zero byte file and open in append mode
-	//if fails send error flag
-	fclose(fstr);
-	fstr = fopen(fname, "a");
-	if (fstr == NULL){
-		if(write_opcode(sock_d, PUT_STATUS_ERR) < 0){
-			free(block_buf);
-			return;
-                }
-		free(block_buf);
-                return;
 	}
- 	//otherwise, all okay	
-	if(write_opcode(sock_d, PUT_STATUS_OK) < 0){
-        	fclose(fstr);
-	        free(block_buf);
+
+	// Read the filename buffer
+	if(readn(sock_d, filename, (int) len) < 0){
+        	free(block_buf);
 		return;
     	}
-	//set chunk to a positive value to start while loop
-	chunk = 1;
-	while (chunk > 0){
-		read_twonetbs(sock_d, &chunk);
-		if (chunk > 0){
-			readn(sock_d, block_buf, (int) chunk);
-			fwrite(block_buf, 1, chunk, fstr);
-			//write_opcode(sock_d, PUT_STATUS_OK);
+
+	if(strlen(filename) > 0){
+        	char *fname = filename;
+        	FILE *fstr = NULL;
+	
+		//if remote end can open the file ready for sending, procee
+		if (read_opcode(sock_d, &op) < 0){
+			free(block_buf);
+			return;
+         	}
+	 	if (op != PUT_STATUS_READY){
+			//anything other than an READY abort
+		 	free(block_buf);
+			return;
 		}
-		write_opcode(sock_d, PUT_STATUS_OK);
+	
+		//try and open a new file, or open and truncate
+		//if fails send error flag
+		fstr = fopen(fname, "w" );
+		if (fstr == NULL){
+			if(write_opcode(sock_d, PUT_STATUS_ERR) < 0){
+				free(block_buf);
+				return;
+			}
+			free(block_buf);
+			return;
+        	}
+		//then close new zero byte file and open in append mode
+		//if fails send error flag
+		fclose(fstr);
+		fstr = fopen(fname, "a");
+		if (fstr == NULL){
+			if(write_opcode(sock_d, PUT_STATUS_ERR) < 0){
+				free(block_buf);
+				return;
+                	}
+			free(block_buf);
+                	return;
+		}	
+ 		//otherwise, all okay	
+		if(write_opcode(sock_d, PUT_STATUS_READY) < 0){
+        		fclose(fstr);
+	        	free(block_buf);
+			return;
+    		}
+		//set chunk to a positive value to start while loop
+		chunk = 1;
+		int iteration = 0;
+		while (chunk > 0){
+			read_twonetbs(sock_d, &chunk);
+			//this catches the exception of a zero byte file, sends an acknowledgement without a payload
+			if (chunk == 0 && iteration == 0){
+				write_opcode(sock_d, PUT_STATUS_OK);
+			}
+			if (chunk > 0){
+				readn(sock_d, block_buf, (int) chunk);
+				fwrite(block_buf, 1, chunk, fstr);
+				write_opcode(sock_d, PUT_STATUS_OK);
+			}
+			iteration++;
         	
-    	}
-	fclose(fstr);
-    }
+    		}
+		fclose(fstr);
+	}
 
-    free(block_buf);
-    return;
-
+    	free(block_buf);
+    	return;
 }
 
 
 void serve_get(int sock_d){
-    short len = 0;
-    char filename[256];
-    char *block_buf = malloc(MAX_BLOCK_SIZE);
-    // Ensure the buffers are empty
-    bzero(filename, 256);
-    bzero(block_buf, MAX_BLOCK_SIZE);
-    char op;
-    // Read in length of the filename buffer
-    if(read_twonetbs(sock_d, &len) < 0){
-        free(block_buf);
-	return;
-    }
+	short len = 0;
+	char filename[256];
+	char *block_buf = malloc(MAX_BLOCK_SIZE);
+	// Ensure the buffers are empty
+	bzero(filename, 256);
+	bzero(block_buf, MAX_BLOCK_SIZE);
+	char op = 'A';
+	// Read in length of the filename buffer
+    	if(read_twonetbs(sock_d, &len) < 0){
+        	free(block_buf);
+		return;
+    	}
 
-    // Read the filename buffer
-    if(readn(sock_d, filename, (int) len) < 0){
-        free(block_buf);
-	return;
-    }
+	// Read the filename buffer
+	if(readn(sock_d, filename, (int) len) < 0){
+        	free(block_buf);
+		return;
+    	}
     
-    if(strlen(filename) > 0){
-        char *fname = filename;
-        FILE *fstr;
-	struct stat file_stat;
-        int transfer_remain;
-        int file_offset;
-	//check if file exists, get size
-	if ((stat(fname, &file_stat)) == 0){
-		//get size of transfer in bytes
-                transfer_remain = file_stat.st_size;
-                //try and open file read only
-        	//if fails send error flag
-        	fstr = fopen(fname, "r" );
-        	if (fstr == NULL){
-                	if(write_opcode(sock_d, GET_STATUS_ERR) < 0){
-                        	free(block_buf);
+	if(strlen(filename) > 0){
+		char *fname = filename;
+		FILE *fstr = NULL
+		struct stat file_stat;
+		int transfer_remain = 0;
+		int file_offset = 0;
+		//check if file exists, get size
+		if ((stat(fname, &file_stat)) == 0){
+			//get size of transfer in bytes
+			transfer_remain = file_stat.st_size;
+			//try and open file read only
+			//if fails send error flag
+			fstr = fopen(fname, "r" );
+			if (fstr == NULL){
+				if(write_opcode(sock_d, GET_STATUS_ERR) < 0){
+					free(block_buf);
+					return;
+				}
+				free(block_buf);
 				return;
-                	}
-			free(block_buf);
-			return;
-		}
-		//otherwise, all okay
-        	if(write_opcode(sock_d, GET_STATUS_OK) < 0){
-                	free(block_buf);
-			fclose(fstr);
-			return;
-        	}
-		//send total file size
-		if (write_fournetbs(sock_d, transfer_remain) < 0){
-			//couldn't write size
-			free(block_buf);
-                        fclose(fstr);
-			return;
-		}
-		//if amount to send exceeds max block size, send a max size block. Otherwise send remaining data.
-        	if (transfer_remain > 0){
-			while (transfer_remain > 0){
-                        	if (transfer_remain > MAX_BLOCK_SIZE){
-                                	fread(block_buf, 1, MAX_BLOCK_SIZE, fstr);
-                                	write_twonetbs(sock_d, (short) MAX_BLOCK_SIZE);
-                                	writen(sock_d, block_buf, MAX_BLOCK_SIZE);
-                                	transfer_remain = transfer_remain - MAX_BLOCK_SIZE;
-                                	if (read_opcode(sock_d, &op) < 0){
-                                        	//transfer issue - abort
-                                		free(block_buf);
-                        			fclose(fstr);
-						return;
-                                	}
-                                	if (op != GET_STATUS_OK){
-                                		//transfer issue - abort
-						free(block_buf);
-                        			fclose(fstr);
-						return;
-                                	}
-
-                        	}	
-                        	else
-                        	{
-                                	fread(block_buf, 1, (int) transfer_remain, fstr);
-                                	write_twonetbs(sock_d, (short) transfer_remain);
-                                	writen(sock_d, block_buf, transfer_remain);
-                                	transfer_remain = 0;
-                                	//following zero size write breaks look at other end
-                                	write_twonetbs(sock_d, (short) transfer_remain);
-                                	if (read_opcode(sock_d, &op) < 0){
-                                        	//expected opcode didn't arrive, expected PUT_STATUS_OK
-				        	free(block_buf);
-                        			fclose(fstr);
-						return;
-                                	}
-                                	if (op != GET_STATUS_OK){
-                                        	//Transfer issue - abort
-				        	free(block_buf);
-                        			fclose(fstr);
-						return;
-                                	}
-
-                        	}
-
-                	}
-			 if (read_opcode(sock_d, &op) < 0){
-                         //printf("5 - expected opcode didn't arrive, expected PUT_STATUS_OK\n");
-                               	free(block_buf);
-                        	fclose(fstr);
+			}
+			//otherwise, all okay at this end
+			if(write_opcode(sock_d, GET_STATUS_READY) < 0){
+				free(block_buf);
+				fclose(fstr);
 				return;
-                         }
-                         if (op != GET_STATUS_OK){
-                         //Transfer issue - abort
-                                free(block_buf);
-                        	fclose(fstr);
-				return;
-                         }
-
-		}
-		else {
-		//if file size is zero bytes just wait for ackowledgment
-			write_twonetbs(sock_d, (short) transfer_remain);
-                        //writen(sock_d, block_buf, transfer_remain); 
-			
+			}
+			//is other end okay?
+			//read code
 			if (read_opcode(sock_d, &op) < 0){
-                         //expected opcode didn't arrive, expected PUT_STATUS_OK
-                                free(block_buf);
-                        	fclose(fstr);
+				free(block_buf);
+				fclose(fstr);
 				return;
-                         }
-                         if (op != GET_STATUS_OK){
-                         //Transfer issue - abort
-                      		free(block_buf);
-                        	fclose(fstr);   
-		      		return;
-                         }
-			
+			}	
+			//if other end isn't ready, abort. 
+			if (op != GET_STATUS_READY){
+				free(block_buf);
+				fclose(fstr);
+				return;
+			}
+	
+			//send total file size
+			if (write_fournetbs(sock_d, transfer_remain) < 0){
+				//couldn't write size
+				free(block_buf);
+				fclose(fstr);
+				return;
+			}
+			//if amount to send exceeds max block size, send a max size block. Otherwise send remaining data.
+			if (transfer_remain > 0){
+				while (transfer_remain > 0){
+					if (transfer_remain > MAX_BLOCK_SIZE){
+						fread(block_buf, 1, MAX_BLOCK_SIZE, fstr);
+						write_twonetbs(sock_d, (short) MAX_BLOCK_SIZE);
+						writen(sock_d, block_buf, MAX_BLOCK_SIZE);
+						transfer_remain = transfer_remain - MAX_BLOCK_SIZE;
+						if (read_opcode(sock_d, &op) < 0){
+						//transfer issue - abort
+							free(block_buf);
+							fclose(fstr);
+							return;
+						}
+						if (op != GET_STATUS_OK){
+							//transfer issue - abort
+							free(block_buf);
+							fclose(fstr);
+							return;
+						}
+					}	
+					else
+					{
+						fread(block_buf, 1, (int) transfer_remain, fstr);
+						write_twonetbs(sock_d, (short) transfer_remain);
+						writen(sock_d, block_buf, transfer_remain);
+						transfer_remain = 0;
+						//following zero size write breaks look at other end
+						write_twonetbs(sock_d, (short) transfer_remain);
+						if (read_opcode(sock_d, &op) < 0){
+							//expected opcode didn't arrive, expected PUT_STATUS_OK
+							free(block_buf);
+							fclose(fstr);
+							return;
+						}
+						if (op != GET_STATUS_OK){
+							//Transfer issue - abort
+							free(block_buf);
+							fclose(fstr);
+							return;
+						}
+					}
+				}
+				if (read_opcode(sock_d, &op) < 0){
+        	                //expected opcode didn't arrive, expected PUT_STATUS_OK
+					free(block_buf);
+					fclose(fstr);
+					return;
+				}
+				if (op != GET_STATUS_OK){
+				//Transfer issue - abort
+					free(block_buf);
+					fclose(fstr);
+					return;
+				}
+			}
+			else 
+			{
+			//if file size is zero bytes just wait for ackowledgment
+				write_twonetbs(sock_d, (short) transfer_remain);
+				if (read_opcode(sock_d, &op) < 0){
+        	                 	//expected opcode didn't arrive, expected PUT_STATUS_OK
+					free(block_buf);
+					fclose(fstr);
+					return;
+				}
+				if (op != GET_STATUS_OK){
+	                        //Transfer issue - abort
+                      			free(block_buf);
+					fclose(fstr);   
+					return;
+				}
+			}
+		} 
+		else
+		{
+			//stat file failed
+			write_opcode(sock_d, GET_STATUS_ERR);
+	                free(block_buf);
+			return;
 		}
-		
-	   } 
-	   else
-	 {
-	  //stat file failed
-	  if(write_opcode(sock_d, GET_STATUS_ERR) < 0){
-                       free(block_buf);
-                       fclose(fstr);
-		       return;
-                }
-       	 }
-        fclose(fstr);
-    }
+		fclose(fstr);
+	}
 
-    free(block_buf);
-    return;
+	free(block_buf);
+	return;
 }
 
 

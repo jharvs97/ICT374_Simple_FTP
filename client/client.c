@@ -173,8 +173,8 @@ void send_cd(int sock_d, char* dir){
 
 void send_put(int sock_d, char* filename ){
 
-    char op;
-    char ack;
+    char op = 'A';
+    char ack = 'A';
     char *block_buf = malloc(MAX_BLOCK_SIZE);
     int len = strlen(filename);
     //clear buffer
@@ -195,10 +195,10 @@ void send_put(int sock_d, char* filename ){
 
     if(strlen(filename) > 0){
         char *fname = filename;
-        FILE *fstr;
+        FILE *fstr = NULL;
         struct stat file_stat;
-	int transfer_remain;
-	int file_offset;
+	int transfer_remain = 0;
+	int file_offset = 0;
 
 	if(stat(fname, &file_stat) == 0){
 		//get size of transfer in bytes
@@ -216,7 +216,7 @@ void send_put(int sock_d, char* filename ){
 			return;
 		}
 		//when we have confirmed we can stat and open the file, send status
-		if(write_opcode(sock_d, PUT_STATUS_OK) < 0){
+		if(write_opcode(sock_d, PUT_STATUS_READY) < 0){
                 	free(block_buf);
 			fclose(fstr);
 			return;
@@ -228,7 +228,7 @@ void send_put(int sock_d, char* filename ){
                         fclose(fstr);
 			return;
 		}
-		if (op != PUT_STATUS_OK){
+		if (op != PUT_STATUS_READY){
 			if (op == PUT_STATUS_ERR)
 			{
 				printf ("2 - Remote - Could not open for writing: %s\n", fname);
@@ -237,7 +237,7 @@ void send_put(int sock_d, char* filename ){
 				return;
 			}
 			else{
-				printf("2 - Unknown flag from remote end");
+				printf("2 - Unknown flag from remote end - %c\n",op);
 				free(block_buf);
 				fclose(fstr);
 				return;
@@ -316,9 +316,12 @@ void send_put(int sock_d, char* filename ){
 	}
 	else{
 		//could not stat file
+		if(write_opcode(sock_d, PUT_STATUS_ERR) < 0){
+			return;
+		}
 		printf("5 - Local - Could not open file\n");
 		free(block_buf);
-                fclose(fstr);
+                //fclose(fstr);
 		return;
 	}
 	}
@@ -330,12 +333,12 @@ void send_put(int sock_d, char* filename ){
 
 void send_get(int sock_d, char* filename ){
 
-    char op;
-    char ack;
+    char op = 'A';
+    char ack = 'A';
     char *block_buf = malloc(MAX_BLOCK_SIZE);
     int len = strlen(filename);
     int transfer_remain = 0;
-    short chunk;
+    short chunk = 0;
     bzero(block_buf, MAX_BLOCK_SIZE);
 
     if(write_opcode(sock_d, GET_OPCODE) < 0){
@@ -358,24 +361,37 @@ void send_get(int sock_d, char* filename ){
 
     if(len > 0){
         char *fname = filename;
-        FILE *fstr;
+        FILE *fstr = NULL;
         int file_offset;
 	if (read_opcode(sock_d, &op) < 0){
                 free(block_buf);
 		return;
         }
         //no point in wiping out a local file until we know the other end is ready to send a replacement. 
-	if (op == GET_STATUS_OK){
-        	printf ("6 - File opened on the remote end: %s\n", fname);
+	if (op == GET_STATUS_READY){
+        	printf ("5 - File opened on the remote end: %s\n", fname);
 	        fstr = fopen(fname, "w" );
+		if (fstr == NULL){
+                        printf ("6 - Could not opened file for writing: %s\n", fname);
+                        write_opcode(sock_d, GET_STATUS_ERR);
+                        free(block_buf);
+                        return;
+                }
 		fclose(fstr);
 		//reopen now-empty file in append mode
 		fstr = fopen(fname, "a" );
 		if (fstr == NULL){
 			printf ("7 - Could not opened file for writing: %s\n", fname);
+			write_opcode(sock_d, GET_STATUS_ERR);
 			free(block_buf);
 	                return;
 		}
+		//if we've survived this long, we are ready, send ready flag. 
+		if(write_opcode(sock_d, GET_STATUS_READY) < 0){
+                        free(block_buf);
+                        fclose(fstr);
+                        return;
+                }
 		//get total size of transfer - for reporting size only 
 		if(read_fournetbs(sock_d, &transfer_remain) < 0){
 			printf("8 - Could not get size of remote file: %s\n", fname);
