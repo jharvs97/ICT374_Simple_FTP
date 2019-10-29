@@ -311,7 +311,7 @@ void serve_get(int sock_d){
     
 	if(strlen(filename) > 0){
 		char *fname = filename;
-		FILE *fstr = NULL
+		FILE *fstr = NULL;
 		struct stat file_stat;
 		int transfer_remain = 0;
 		int file_offset = 0;
