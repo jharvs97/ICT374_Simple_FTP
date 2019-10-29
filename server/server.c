@@ -14,6 +14,9 @@
 #include <netinet/in.h>
 #include <dirent.h>
 #include <arpa/inet.h>
+#include <time.h>
+#include <stdio.h>
+#include <stdarg.h>
 
 // My headers
 #include "daemon.h"
@@ -22,7 +25,60 @@
 
 #define SERV_TCP_PORT 40005
 
+#define LOGGER_PATH "./server.log"
+
 void server_a_client(int sock_d);
+
+char* mapCmdToString(char cmd)
+{
+    char* cmd_str = malloc(32);
+
+    switch(cmd){
+        case PWD_OPCODE:
+            strcpy(cmd_str, "PWD");
+            break;
+        case CD_OPCODE:
+            strcpy(cmd_str, "CD");
+            break;
+        case DIR_OPCODE:
+            strcpy(cmd_str, "DIR");
+            break;
+        default:
+            return NULL;
+            break;
+    }   
+
+    return cmd_str;
+}
+
+/**
+ * @brief Fuction to log to file
+ * @param msg Message to send to logging file
+ * @return void
+ */
+void my_log(char cmd, char* msg)
+{
+    int fd;
+    struct tm* tm_ptr;
+    time_t lt;
+
+    if( (fd = open(LOGGER_PATH, O_WRONLY | O_APPEND | O_CREAT, 0766)) < 0 ){
+        perror("logger can't write");
+        exit(0);
+    }
+
+    lt = time(NULL);
+    tm_ptr = localtime(&lt);    
+    char* time_str = asctime(tm_ptr);
+
+    char* cmd_str = mapCmdToString(cmd);
+    
+    dprintf(fd, "[%s]: <%s> %s\n", strtok(time_str, "\n"), cmd_str, msg);
+    
+    free(cmd_str);
+
+    close(fd);    
+}
 
 void serve_dir(int sock_d){
 
@@ -36,6 +92,12 @@ void serve_dir(int sock_d){
     dir_p = opendir(".");
     if(dir_p){
         while((ent_p = readdir(dir_p)) != 0){
+            if(strcmp(ent_p->d_name, ".") == 0)
+                continue;
+            
+            if(strcmp(ent_p->d_name, "..") == 0)
+                continue;
+            
             strcat(files_buf, ent_p->d_name);
             strcat(files_buf, "\n");
         }
@@ -45,17 +107,21 @@ void serve_dir(int sock_d){
     }
 
     if((nw = write_opcode(sock_d, DIR_OPCODE)) < 0){
+        my_log(DIR_OPCODE, "Failed writing Opcode");
         return;
     }
 
     if((nw = write_twonetbs(sock_d, len)) < 0){
+        my_log(DIR_OPCODE, "Failed writing buffer length");
         return;
     }
 
     if((nw = writen(sock_d, files_buf, len)) < 0){
+        my_log(DIR_OPCODE, "Failed writing buffer");
         return;
     }
     
+    my_log(DIR_OPCODE, "DIR finished");
     return;
 }
 
@@ -68,16 +134,21 @@ void serve_pwd(int sock_d){
     getcwd(buf, sizeof(buf));
 
     if(write_opcode(sock_d, PWD_OPCODE) < 0){
+        my_log(PWD_OPCODE, "Failed to write OPcode to client");
         return;
     }
 
     if(write_twonetbs(sock_d, (short) strlen(buf)) < 0){
+        my_log(PWD_OPCODE, "Failed to write buffer length to client");
         return;
     }
 
     if(writen(sock_d, buf, strlen(buf)) < 0){
+        my_log(PWD_OPCODE, "Failed to write buffer to client");
         return;
     }
+
+    my_log(PWD_OPCODE, "PWD finished");
 
     return;
 }
@@ -91,21 +162,19 @@ void serve_cd(int sock_d){
 
     // Read in length of the directory buffer
     if(read_twonetbs(sock_d, &len) < 0){
+        my_log(CD_OPCODE, "Failed to read length of directory");
         return;
     }
 
     // Read the dir buffer
     if(readn(sock_d, dir, (int) len) < 0){
+        my_log(CD_OPCODE, "Failed to read the directory buffer");
         return;
     }
 
-    // printf("len = %d\n", len);
-    // printf("DIR = %s\n", dir);
-
-    //dir[strlen(dir)-1] = '\0';
-
     if(strlen(dir) > 0){
         if(chdir(dir) == -1){
+            my_log(CD_OPCODE, "Directory doesn't exist");
             ack = CD_ACK_NOEXIST;
         } else {
             ack = CD_ACK_SUCCESS;
@@ -113,13 +182,16 @@ void serve_cd(int sock_d){
     }
 
     if(write_opcode(sock_d, CD_OPCODE) < 0){
+        my_log(CD_OPCODE, "Failed to write OP code");
         return;
     }
 
     if(write_opcode(sock_d, ack) < 0){
+        my_log(CD_OPCODE, "Failed to write ack code");
         return;
     }
-    
+
+    my_log(CD_OPCODE, "CD finished");
     
     return;
 }
@@ -139,7 +211,7 @@ void serve_put(int sock_d){
     // Read in length of the filename buffer
     if(read_twonetbs(sock_d, &len) < 0){
         free(block_buf);
-	return;
+	    return;
     }
 
     // Read the filename buffer
@@ -456,6 +528,7 @@ void server_a_client(int sock_d)
         //     return;files_bu
         // }
 
+        my_log(opcode, "Recieved OPcode from client");
         switch(opcode){
             case DIR_OPCODE:
                 serve_dir(sock_d);
@@ -465,11 +538,11 @@ void server_a_client(int sock_d)
                 break;
             case CD_OPCODE:
                 serve_cd(sock_d);
-		break;
-	    case PUT_OPCODE:
-		serve_put(sock_d);
                 break;
-	    case GET_OPCODE:
+            case PUT_OPCODE:
+                serve_put(sock_d);
+                break;
+            case GET_OPCODE:
                 serve_get(sock_d);
                 break;
             default:

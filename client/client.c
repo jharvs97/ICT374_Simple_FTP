@@ -497,7 +497,12 @@ int main(int argc, char** argv)
             num_tokens = tokenise(buf, tokens);
 
             if(strcmp(tokens[0], "lpwd") == 0){
-                local_pwd();
+                if(num_tokens == 1){
+                    local_pwd();
+                }
+                else {
+                    printf("Invalid command. Usage is: lpwd\n");
+                }
             }
             else if(strcmp(tokens[0], "lcd") == 0){
                 if(num_tokens == 2){
@@ -507,13 +512,28 @@ int main(int argc, char** argv)
                 }
             }
             else if(strcmp(tokens[0], "ldir") == 0){
-                local_dir();
+                if(num_tokens == 1){
+                    local_dir();
+                }
+                else {
+                    printf("Invalid command. Usage is: ldir\n");
+                }
             }
             else if(strcmp(tokens[0], "dir") == 0){
-                send_dir(sock_d);
+                if(num_tokens == 1){
+                    send_dir(sock_d);
+                }
+                else {
+                    printf("Invalid command. Usage is: dir\n");
+                }
             }
             else if(strcmp(tokens[0], "pwd") == 0){
-                send_pwd(sock_d);   
+                if(num_tokens == 1){
+                    send_pwd(sock_d);
+                }
+                else {
+                    printf("Invalid command. Usage is: pwd\n");
+                }   
             }
             else if(strcmp(tokens[0], "cd") == 0){
                 if(num_tokens == 2){

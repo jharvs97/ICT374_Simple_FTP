@@ -30,8 +30,8 @@ int readn(int fd, char *buf, int bufsize)
     // }
     // return (len); 
 
-    int nr=1, n;
-    for(n=0; (n < bufsize) && (nr > 0); n += nr){
+    int nr=0, n;
+    for(n=0; n < bufsize; n += nr){
         if ((nr = read(fd, buf+n, bufsize-n)) <= 0){
             return (nr);
         }
