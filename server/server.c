@@ -17,6 +17,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 // My headers
 #include "daemon.h"
@@ -25,9 +26,13 @@
 
 #define SERV_TCP_PORT 40005
 
-#define LOGGER_PATH "./server.log"
+#define LOGGER_FNAME "/server.log"
 
-void server_a_client(int sock_d);
+typedef struct{
+	char* path_to_logfile;
+} log_desc;
+
+void server_a_client(int sock_d, log_desc* ld);
 
 char* mapCmdToString(char cmd)
 {
@@ -56,13 +61,13 @@ char* mapCmdToString(char cmd)
  * @param msg Message to send to logging file
  * @return void
  */
-void my_log(char cmd, char* msg)
+void my_log(log_desc* ld, char cmd, char* msg)
 {
     int fd;
     struct tm* tm_ptr;
-    time_t lt;
+    time_t lt;	
 
-    if( (fd = open(LOGGER_PATH, O_WRONLY | O_APPEND | O_CREAT, 0766)) < 0 ){
+    if( (fd = open(ld->path_to_logfile, O_WRONLY | O_APPEND | O_CREAT, 0766)) < 0 ){
         perror("logger can't write");
         exit(0);
     }
@@ -80,7 +85,7 @@ void my_log(char cmd, char* msg)
     close(fd);    
 }
 
-void serve_dir(int sock_d){
+void serve_dir(int sock_d, log_desc* ld){
 
     short len;
     int nw;
@@ -107,25 +112,25 @@ void serve_dir(int sock_d){
     }
 
     if((nw = write_opcode(sock_d, DIR_OPCODE)) < 0){
-        my_log(DIR_OPCODE, "Failed writing Opcode");
+        my_log(ld, DIR_OPCODE, "Failed writing Opcode");
         return;
     }
 
     if((nw = write_twonetbs(sock_d, len)) < 0){
-        my_log(DIR_OPCODE, "Failed writing buffer length");
+        my_log(ld, DIR_OPCODE, "Failed writing buffer length");
         return;
     }
 
     if((nw = writen(sock_d, files_buf, len)) < 0){
-        my_log(DIR_OPCODE, "Failed writing buffer");
+        my_log(ld, DIR_OPCODE, "Failed writing buffer");
         return;
     }
     
-    my_log(DIR_OPCODE, "DIR finished");
+    my_log(ld, DIR_OPCODE, "DIR finished");
     return;
 }
 
-void serve_pwd(int sock_d){
+void serve_pwd(int sock_d, log_desc* ld){
     int len;
 
     char buf[256];
@@ -134,26 +139,26 @@ void serve_pwd(int sock_d){
     getcwd(buf, sizeof(buf));
 
     if(write_opcode(sock_d, PWD_OPCODE) < 0){
-        my_log(PWD_OPCODE, "Failed to write OPcode to client");
+        my_log(ld, PWD_OPCODE, "Failed to write OPcode to client");
         return;
     }
 
     if(write_twonetbs(sock_d, (short) strlen(buf)) < 0){
-        my_log(PWD_OPCODE, "Failed to write buffer length to client");
+        my_log(ld, PWD_OPCODE, "Failed to write buffer length to client");
         return;
     }
 
     if(writen(sock_d, buf, strlen(buf)) < 0){
-        my_log(PWD_OPCODE, "Failed to write buffer to client");
+        my_log(ld, PWD_OPCODE, "Failed to write buffer to client");
         return;
     }
 
-    my_log(PWD_OPCODE, "PWD finished");
+    my_log(ld, PWD_OPCODE, "PWD finished");
 
     return;
 }
 
-void serve_cd(int sock_d){
+void serve_cd(int sock_d, log_desc* ld){
     short len;
     char dir[256];
     // Ensure the buffer is empty
@@ -162,19 +167,19 @@ void serve_cd(int sock_d){
 
     // Read in length of the directory buffer
     if(read_twonetbs(sock_d, &len) < 0){
-        my_log(CD_OPCODE, "Failed to read length of directory");
+        my_log(ld, CD_OPCODE, "Failed to read length of directory");
         return;
     }
 
     // Read the dir buffer
     if(readn(sock_d, dir, (int) len) < 0){
-        my_log(CD_OPCODE, "Failed to read the directory buffer");
+        my_log(ld, CD_OPCODE, "Failed to read the directory buffer");
         return;
     }
 
     if(strlen(dir) > 0){
         if(chdir(dir) == -1){
-            my_log(CD_OPCODE, "Directory doesn't exist");
+            my_log(ld, CD_OPCODE, "Directory doesn't exist");
             ack = CD_ACK_NOEXIST;
         } else {
             ack = CD_ACK_SUCCESS;
@@ -182,21 +187,21 @@ void serve_cd(int sock_d){
     }
 
     if(write_opcode(sock_d, CD_OPCODE) < 0){
-        my_log(CD_OPCODE, "Failed to write OP code");
+        my_log(ld, CD_OPCODE, "Failed to write OP code");
         return;
     }
 
     if(write_opcode(sock_d, ack) < 0){
-        my_log(CD_OPCODE, "Failed to write ack code");
+        my_log(ld, CD_OPCODE, "Failed to write ack code");
         return;
     }
 
-    my_log(CD_OPCODE, "CD finished");
+    my_log(ld, CD_OPCODE, "CD finished");
     
     return;
 }
 
-void serve_put(int sock_d){
+void serve_put(int sock_d, log_desc* ld){
 	short chunk = 0;
 	char filename[256];
 	char *block_buf = malloc(MAX_BLOCK_SIZE);
@@ -289,7 +294,7 @@ void serve_put(int sock_d){
 }
 
 
-void serve_get(int sock_d){
+void serve_get(int sock_d, log_desc* ld){
 	short len = 0;
 	char filename[256];
 	char *block_buf = malloc(MAX_BLOCK_SIZE);
@@ -454,7 +459,7 @@ int main(int argc, char** argv)
     struct sockaddr_in cli_addr;    // Client socket address
     socklen_t cli_addrlen;          // Length of the client address
     pid_t pid;                      // pid for child processes
-
+	log_desc ld;
 
     /* Check the command line args */
     if(argc == 1 || argc > 2)
@@ -469,6 +474,11 @@ int main(int argc, char** argv)
             printf("Initial current directory not found!\n");
             exit(1);
         }
+
+		ld.path_to_logfile = (char*)malloc(256 * sizeof(char*));
+
+		getcwd(ld.path_to_logfile, 256);
+		strcat(ld.path_to_logfile, LOGGER_FNAME);
     }
 
     /* Turn server into a daemon */
@@ -511,7 +521,7 @@ int main(int argc, char** argv)
         /* To reach here the process must be a child */
         close(sock_d);
         /* serve the client */
-        server_a_client(acc_sd);
+        server_a_client(acc_sd, &ld);
         /* exit child process */
         exit(0);
 
@@ -520,39 +530,30 @@ int main(int argc, char** argv)
     return 0;
 }
 
-void server_a_client(int sock_d)
+void server_a_client(int sock_d, log_desc* ld)
 {
     int nr, nw;
     char opcode;
 
     while(read_opcode(sock_d, &opcode) > 0){
-        /*read data from client*/
-        // if((nr = readn(sock_d, buf, MAX_BLOCK_SIZE)) <= 0){
-        //     return; /* connection broke down */
-        // }
-        // nw = writen(sock_d, return_msg, sizeof(return_msg));
 
-        /* Read OpCode from client */
-        // if( (nr = read_opcode(sock_d, &opcode)) <= 0){
-        //     return;files_bu
-        // }
+        my_log(ld, opcode, "Recieved OPcode from client");
 
-        my_log(opcode, "Recieved OPcode from client");
         switch(opcode){
             case DIR_OPCODE:
-                serve_dir(sock_d);
+                serve_dir(sock_d, ld);
                 break;
             case PWD_OPCODE:
-                serve_pwd(sock_d);
+                serve_pwd(sock_d, ld);
                 break;
             case CD_OPCODE:
-                serve_cd(sock_d);
+                serve_cd(sock_d, ld);
                 break;
             case PUT_OPCODE:
-                serve_put(sock_d);
+                serve_put(sock_d, ld);
                 break;
             case GET_OPCODE:
-                serve_get(sock_d);
+                serve_get(sock_d, ld);
                 break;
             default:
                 break;

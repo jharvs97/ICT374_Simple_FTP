@@ -2,3 +2,5 @@
 myftp
 myftpd
 **/server.log
+tests/
+**/server_files/

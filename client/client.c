@@ -349,14 +349,14 @@ void send_get(int sock_d, char* filename ){
 
     if(write_twonetbs(sock_d, (short) len) < 0){
         printf("2 - Failed to write buffer length\n"); 
-	free(block_buf);
-	return;
+        free(block_buf);
+        return;
     }
 
     if(writen(sock_d, filename, len) < 0){
         printf("3 - Failed writing buffer\n"); 
-	free(block_buf);
-	return;
+        free(block_buf);
+        return;
     }
 
     if(len > 0){
@@ -491,7 +491,7 @@ int main(int argc, char** argv)
         memset(buf, 0, sizeof(buf));
         //memset(temp_buf, 0, sizeof(temp_buf));
 
-        printf("$ ");
+        printf("myftp> ");
 
         fgets(buf, sizeof(buf), stdin);
         
