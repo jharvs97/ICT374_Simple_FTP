@@ -1,3 +1,10 @@
+/**
+ * @file server.c
+ * @author Mathew Devene & Joshua Harvey
+ * @brief A FTP server that listens for client requests of a well known port, and serves those requests based on our FTP protocol
+ * @pre N/A
+ * @post N/A
+ */
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -24,16 +31,33 @@
 #include "stream.h"
 #include "protocol.h"
 
-#define SERV_TCP_PORT 40005
+//#define SERV_TCP_PORT 40005
+#define SERV_TCP_PORT 40744 /* Well known port */
 
 #define LOGGER_FNAME "/server.log"
 
+/**
+ * @struct log_desc
+ * @brief structure to hold all information to be logged, could include client id's etc
+ */
 typedef struct{
 	char* path_to_logfile;
 } log_desc;
 
+/**
+ * @brief Create a fork and serve a client
+ * @pre Server listening on well known port with a TCP socket
+ * @post Routine to serve client executed
+ * @param sock_d (int) Socket file descriptor
+ * @param ld (log_desc*) Logfile descriptor
+ */
 void server_a_client(int sock_d, log_desc* ld);
 
+/**
+ * @brief Helper function to map an Opcode to a string for logging
+ * @param cmd Opcode
+ * @return char* 
+ */
 char* mapCmdToString(char cmd)
 {
     char* cmd_str = malloc(32);
@@ -48,6 +72,12 @@ char* mapCmdToString(char cmd)
         case DIR_OPCODE:
             strcpy(cmd_str, "DIR");
             break;
+		case PUT_OPCODE:
+			strcpy(cmd_str, "PUT");
+			break;
+		case GET_OPCODE:
+			strcpy(cmd_str, "GET");
+			break;
         default:
             return NULL;
             break;
@@ -85,6 +115,10 @@ void my_log(log_desc* ld, char cmd, char* msg)
     close(fd);    
 }
 
+/**
+ * @brief Serve a clients request to print the contents of the working directory
+ * @pre 
+ */
 void serve_dir(int sock_d, log_desc* ld){
 
     short len;
@@ -131,9 +165,8 @@ void serve_dir(int sock_d, log_desc* ld){
 }
 
 void serve_pwd(int sock_d, log_desc* ld){
-    int len;
-
     char buf[256];
+
     // Ensure the buffer is empty
     bzero(buf, 256);
     getcwd(buf, sizeof(buf));
@@ -319,7 +352,6 @@ void serve_get(int sock_d, log_desc* ld){
 		FILE *fstr = NULL;
 		struct stat file_stat;
 		int transfer_remain = 0;
-		int file_offset = 0;
 		//check if file exists, get size
 		if ((stat(fname, &file_stat)) == 0){
 			//get size of transfer in bytes
@@ -532,7 +564,6 @@ int main(int argc, char** argv)
 
 void server_a_client(int sock_d, log_desc* ld)
 {
-    int nr, nw;
     char opcode;
 
     while(read_opcode(sock_d, &opcode) > 0){
