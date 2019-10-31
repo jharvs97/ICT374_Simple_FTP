@@ -117,7 +117,11 @@ void my_log(log_desc* ld, char cmd, char* msg)
 
 /**
  * @brief Serve a clients request to print the contents of the working directory
- * @pre 
+ * @pre Client and Server are following our FTP protocol
+ * @post Buffer written to socket containing the contents of the cwd, newline delimited
+ * @param sock_d (int) Socket file descriptor
+ * @param ld (log_desc*) data to log to file
+ * @return void
  */
 void serve_dir(int sock_d, log_desc* ld){
 
@@ -164,6 +168,14 @@ void serve_dir(int sock_d, log_desc* ld){
     return;
 }
 
+/**
+ * @brief Serve a request to print the working directory of the server
+ * @pre Client and Server are following our FTP protocol
+ * @post Buffer written to socket containing the working directory
+ * @param sock_d (int) Socket file descriptor
+ * @param ld (log_desc*) Information required for logging
+ * @return void
+ */
 void serve_pwd(int sock_d, log_desc* ld){
     char buf[256];
 
@@ -191,6 +203,14 @@ void serve_pwd(int sock_d, log_desc* ld){
     return;
 }
 
+/**
+ * @brief Serves a clients request to change the working directory on the FTP server
+ * @pre Client and Server are following our FTP protocol
+ * @pre Directory exists on the server
+ * @post Working directory is changed
+ * @param sock_d (int) Socket file descriptor
+ * @param ld (log_desc*) Information for logging
+ */
 void serve_cd(int sock_d, log_desc* ld){
     short len;
     char dir[256];
@@ -234,6 +254,14 @@ void serve_cd(int sock_d, log_desc* ld){
     return;
 }
 
+/**
+ * @brief Serve a clients request to put a file onto the FTP server
+ * @pre Client and Server are following our FTP protocol
+ * @pre Files size in bits is less than 2^32 
+ * @post file transferred from client to server
+ * @param sock_d (int) Socket file descriptor
+ * @param ld (log_desc*) Information for logging
+ */
 void serve_put(int sock_d, log_desc* ld){
 	short chunk = 0;
 	char filename[256];
@@ -326,7 +354,14 @@ void serve_put(int sock_d, log_desc* ld){
     	return;
 }
 
-
+/**
+ * @brief Serve a clients request to get a file from the FTP server
+ * @pre Client and Server are following our FTP protocol
+ * @pre Files size in bits is less than 2^32 
+ * @post file transferred from srver to client
+ * @param sock_d (int) Socket file descriptor
+ * @param ld (log_desc*) Information for logging
+ */
 void serve_get(int sock_d, log_desc* ld){
 	short len = 0;
 	char filename[256];

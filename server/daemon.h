@@ -1,13 +1,12 @@
-/* 
-    File: Daemon.h
-    Author: Hong Xie
-    Purpose: Contains function declaration for daemon initialisation
-*/
+/**
+ * @file Daemon.h
+ * @author Hong Xie
+ * @brief Contains function declaration for daemon initialisation
+ */
 
-/* 
- * Function: daemon_init
- * Purpose: Turn the current process into a daemon
- * Params: void
- * Return: void
+/** 
+ * @brief Turn the current process into a daemon
+ * @param void
+ * @return void
  */
 void daemon_init();
