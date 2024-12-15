@@ -1,3 +1,10 @@
+/**
+ * @file server.c
+ * @author Mathew Devene & Joshua Harvey
+ * @brief A FTP server that listens for client requests of a well known port, and serves those requests based on our FTP protocol
+ * @pre N/A
+ * @post N/A
+ */
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -14,17 +21,109 @@
 #include <netinet/in.h>
 #include <dirent.h>
 #include <arpa/inet.h>
+#include <time.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <stdlib.h>
 
 // My headers
 #include "daemon.h"
 #include "stream.h"
 #include "protocol.h"
 
-#define SERV_TCP_PORT 40005
+//#define SERV_TCP_PORT 40005
+#define SERV_TCP_PORT 40744 /* Well known port */
 
-void server_a_client(int sock_d);
+#define LOGGER_FNAME "/server.log"
 
-void serve_dir(int sock_d){
+/**
+ * @struct log_desc
+ * @brief structure to hold all information to be logged, could include client id's etc
+ */
+typedef struct{
+	char* path_to_logfile;
+} log_desc;
+
+/**
+ * @brief Create a fork and serve a client
+ * @pre Server listening on well known port with a TCP socket
+ * @post Routine to serve client executed
+ * @param sock_d (int) Socket file descriptor
+ * @param ld (log_desc*) Logfile descriptor
+ */
+void server_a_client(int sock_d, log_desc* ld);
+
+/**
+ * @brief Helper function to map an Opcode to a string for logging
+ * @param cmd Opcode
+ * @return char* 
+ */
+char* mapCmdToString(char cmd)
+{
+    char* cmd_str = malloc(32);
+
+    switch(cmd){
+        case PWD_OPCODE:
+            strcpy(cmd_str, "PWD");
+            break;
+        case CD_OPCODE:
+            strcpy(cmd_str, "CD");
+            break;
+        case DIR_OPCODE:
+            strcpy(cmd_str, "DIR");
+            break;
+		case PUT_OPCODE:
+			strcpy(cmd_str, "PUT");
+			break;
+		case GET_OPCODE:
+			strcpy(cmd_str, "GET");
+			break;
+        default:
+            return NULL;
+            break;
+    }   
+
+    return cmd_str;
+}
+
+/**
+ * @brief Fuction to log to file
+ * @param msg Message to send to logging file
+ * @return void
+ */
+void my_log(log_desc* ld, char cmd, char* msg)
+{
+    int fd;
+    struct tm* tm_ptr;
+    time_t lt;	
+
+    if( (fd = open(ld->path_to_logfile, O_WRONLY | O_APPEND | O_CREAT, 0766)) < 0 ){
+        perror("logger can't write");
+        exit(0);
+    }
+
+    lt = time(NULL);
+    tm_ptr = localtime(&lt);    
+    char* time_str = asctime(tm_ptr);
+
+    char* cmd_str = mapCmdToString(cmd);
+    
+    dprintf(fd, "[%s]: <%s> %s\n", strtok(time_str, "\n"), cmd_str, msg);
+    
+    free(cmd_str);
+
+    close(fd);    
+}
+
+/**
+ * @brief Serve a clients request to print the contents of the working directory
+ * @pre Client and Server are following our FTP protocol
+ * @post Buffer written to socket containing the contents of the cwd, newline delimited
+ * @param sock_d (int) Socket file descriptor
+ * @param ld (log_desc*) data to log to file
+ * @return void
+ */
+void serve_dir(int sock_d, log_desc* ld){
 
     short len;
     int nw;
@@ -36,6 +135,12 @@ void serve_dir(int sock_d){
     dir_p = opendir(".");
     if(dir_p){
         while((ent_p = readdir(dir_p)) != 0){
+            if(strcmp(ent_p->d_name, ".") == 0)
+                continue;
+            
+            if(strcmp(ent_p->d_name, "..") == 0)
+                continue;
+            
             strcat(files_buf, ent_p->d_name);
             strcat(files_buf, "\n");
         }
@@ -45,44 +150,68 @@ void serve_dir(int sock_d){
     }
 
     if((nw = write_opcode(sock_d, DIR_OPCODE)) < 0){
+        my_log(ld, DIR_OPCODE, "Failed writing Opcode");
         return;
     }
 
     if((nw = write_twonetbs(sock_d, len)) < 0){
+        my_log(ld, DIR_OPCODE, "Failed writing buffer length");
         return;
     }
 
     if((nw = writen(sock_d, files_buf, len)) < 0){
+        my_log(ld, DIR_OPCODE, "Failed writing buffer");
         return;
     }
     
+    my_log(ld, DIR_OPCODE, "DIR finished");
     return;
 }
 
-void serve_pwd(int sock_d){
-    int len;
-
+/**
+ * @brief Serve a request to print the working directory of the server
+ * @pre Client and Server are following our FTP protocol
+ * @post Buffer written to socket containing the working directory
+ * @param sock_d (int) Socket file descriptor
+ * @param ld (log_desc*) Information required for logging
+ * @return void
+ */
+void serve_pwd(int sock_d, log_desc* ld){
     char buf[256];
+
     // Ensure the buffer is empty
     bzero(buf, 256);
     getcwd(buf, sizeof(buf));
 
     if(write_opcode(sock_d, PWD_OPCODE) < 0){
+        my_log(ld, PWD_OPCODE, "Failed to write OPcode to client");
         return;
     }
 
     if(write_twonetbs(sock_d, (short) strlen(buf)) < 0){
+        my_log(ld, PWD_OPCODE, "Failed to write buffer length to client");
         return;
     }
 
     if(writen(sock_d, buf, strlen(buf)) < 0){
+        my_log(ld, PWD_OPCODE, "Failed to write buffer to client");
         return;
     }
+
+    my_log(ld, PWD_OPCODE, "PWD finished");
 
     return;
 }
 
-void serve_cd(int sock_d){
+/**
+ * @brief Serves a clients request to change the working directory on the FTP server
+ * @pre Client and Server are following our FTP protocol
+ * @pre Directory exists on the server
+ * @post Working directory is changed
+ * @param sock_d (int) Socket file descriptor
+ * @param ld (log_desc*) Information for logging
+ */
+void serve_cd(int sock_d, log_desc* ld){
     short len;
     char dir[256];
     // Ensure the buffer is empty
@@ -91,21 +220,19 @@ void serve_cd(int sock_d){
 
     // Read in length of the directory buffer
     if(read_twonetbs(sock_d, &len) < 0){
+        my_log(ld, CD_OPCODE, "Failed to read length of directory");
         return;
     }
 
     // Read the dir buffer
     if(readn(sock_d, dir, (int) len) < 0){
+        my_log(ld, CD_OPCODE, "Failed to read the directory buffer");
         return;
     }
 
-    // printf("len = %d\n", len);
-    // printf("DIR = %s\n", dir);
-
-    //dir[strlen(dir)-1] = '\0';
-
     if(strlen(dir) > 0){
         if(chdir(dir) == -1){
+            my_log(ld, CD_OPCODE, "Directory doesn't exist");
             ack = CD_ACK_NOEXIST;
         } else {
             ack = CD_ACK_SUCCESS;
@@ -113,255 +240,281 @@ void serve_cd(int sock_d){
     }
 
     if(write_opcode(sock_d, CD_OPCODE) < 0){
+        my_log(ld, CD_OPCODE, "Failed to write OP code");
         return;
     }
 
     if(write_opcode(sock_d, ack) < 0){
+        my_log(ld, CD_OPCODE, "Failed to write ack code");
         return;
     }
-    
+
+    my_log(ld, CD_OPCODE, "CD finished");
     
     return;
 }
 
-void serve_put(int sock_d){
-    short chunk;
-    char filename[256];
-    char *block_buf = malloc(MAX_BLOCK_SIZE);
-    short len;
-    char op;
+/**
+ * @brief Serve a clients request to put a file onto the FTP server
+ * @pre Client and Server are following our FTP protocol
+ * @pre Files size in bits is less than 2^32 
+ * @post file transferred from client to server
+ * @param sock_d (int) Socket file descriptor
+ * @param ld (log_desc*) Information for logging
+ */
+void serve_put(int sock_d, log_desc* ld){
+	short chunk = 0;
+	char filename[256];
+	char *block_buf = malloc(MAX_BLOCK_SIZE);
+	short len = 0;
+	char op = 'A';
 
-    // Ensure the buffers are empty
-    bzero(filename, 256);
-    bzero(block_buf, MAX_BLOCK_SIZE);
+	// Ensure the buffers are empty
+	bzero(filename, 256);
+	bzero(block_buf, MAX_BLOCK_SIZE);
     
 
-    // Read in length of the filename buffer
-    if(read_twonetbs(sock_d, &len) < 0){
+	// Read in length of the filename buffer
+	if(read_twonetbs(sock_d, &len) < 0){
         free(block_buf);
-	return;
-    }
-
-    // Read the filename buffer
-    if(readn(sock_d, filename, (int) len) < 0){
-        free(block_buf);
-	return;
-    }
-
-    if(strlen(filename) > 0){
-        char *fname = filename;
-        FILE *fstr;
-	
-	//if remote end can open the file ready for sending, proceed
-	 if (read_opcode(sock_d, &op) < 0){
-                 free(block_buf);
-		 return;
-         }
-	 if (op != PUT_STATUS_OK){
-		 //anything other than an OKAY abort
-		 free(block_buf);
-		 return;
-	 }
-	
-	//try and open a new file, or open and truncate
-	//if fails send error flag
-	fstr = fopen(fname, "w" );
-	if (fstr == NULL){
-		if(write_opcode(sock_d, PUT_STATUS_ERR) < 0){
-			free(block_buf);
-			return;
-		}
-		free(block_buf);
-		return;
-        }
-	//then close new zero byte file and open in append mode
-	//if fails send error flag
-	fclose(fstr);
-	fstr = fopen(fname, "a");
-	if (fstr == NULL){
-		if(write_opcode(sock_d, PUT_STATUS_ERR) < 0){
-			free(block_buf);
-			return;
-                }
-		free(block_buf);
-                return;
+	    return;
 	}
- 	//otherwise, all okay	
-	if(write_opcode(sock_d, PUT_STATUS_OK) < 0){
-        	fclose(fstr);
-	        free(block_buf);
+
+	// Read the filename buffer
+	if(readn(sock_d, filename, (int) len) < 0){
+        	free(block_buf);
 		return;
     	}
-	//set chunk to a positive value to start while loop
-	chunk = 1;
-	while (chunk > 0){
-		read_twonetbs(sock_d, &chunk);
-		if (chunk > 0){
-			readn(sock_d, block_buf, (int) chunk);
-			fwrite(block_buf, 1, chunk, fstr);
-			//write_opcode(sock_d, PUT_STATUS_OK);
-		}
-		write_opcode(sock_d, PUT_STATUS_OK);
-        	
-    	}
-	fclose(fstr);
-    }
 
-    free(block_buf);
-    return;
-
-}
-
-
-void serve_get(int sock_d){
-    short len = 0;
-    char filename[256];
-    char *block_buf = malloc(MAX_BLOCK_SIZE);
-    // Ensure the buffers are empty
-    bzero(filename, 256);
-    bzero(block_buf, MAX_BLOCK_SIZE);
-    char op;
-    // Read in length of the filename buffer
-    if(read_twonetbs(sock_d, &len) < 0){
-        free(block_buf);
-	return;
-    }
-
-    // Read the filename buffer
-    if(readn(sock_d, filename, (int) len) < 0){
-        free(block_buf);
-	return;
-    }
-    
-    if(strlen(filename) > 0){
-        char *fname = filename;
-        FILE *fstr;
-	struct stat file_stat;
-        int transfer_remain;
-        int file_offset;
-	//check if file exists, get size
-	if ((stat(fname, &file_stat)) == 0){
-		//get size of transfer in bytes
-                transfer_remain = file_stat.st_size;
-                //try and open file read only
-        	//if fails send error flag
-        	fstr = fopen(fname, "r" );
-        	if (fstr == NULL){
-                	if(write_opcode(sock_d, GET_STATUS_ERR) < 0){
-                        	free(block_buf);
-				return;
-                	}
+	if(strlen(filename) > 0){
+        	char *fname = filename;
+        	FILE *fstr = NULL;
+	
+		//if remote end can open the file ready for sending, procee
+		if (read_opcode(sock_d, &op) < 0){
 			free(block_buf);
 			return;
+         	}
+	 	if (op != PUT_STATUS_READY){
+			//anything other than an READY abort
+		 	free(block_buf);
+			return;
 		}
-		//otherwise, all okay
-        	if(write_opcode(sock_d, GET_STATUS_OK) < 0){
-                	free(block_buf);
-			fclose(fstr);
+	
+		//try and open a new file, or open and truncate
+		//if fails send error flag
+		fstr = fopen(fname, "w" );
+		if (fstr == NULL){
+			if(write_opcode(sock_d, PUT_STATUS_ERR) < 0){
+				free(block_buf);
+				return;
+			}
+			free(block_buf);
 			return;
         	}
-		//send total file size
-		if (write_fournetbs(sock_d, transfer_remain) < 0){
-			//couldn't write size
+		//then close new zero byte file and open in append mode
+		//if fails send error flag
+		fclose(fstr);
+		fstr = fopen(fname, "a");
+		if (fstr == NULL){
+			if(write_opcode(sock_d, PUT_STATUS_ERR) < 0){
+				free(block_buf);
+				return;
+                	}
 			free(block_buf);
-                        fclose(fstr);
+                	return;
+		}	
+ 		//otherwise, all okay	
+		if(write_opcode(sock_d, PUT_STATUS_READY) < 0){
+        		fclose(fstr);
+	        	free(block_buf);
+			return;
+    		}
+		//set chunk to a positive value to start while loop
+		chunk = 1;
+		int iteration = 0;
+		while (chunk > 0){
+			read_twonetbs(sock_d, &chunk);
+			//this catches the exception of a zero byte file, sends an acknowledgement without a payload
+			if (chunk == 0 && iteration == 0){
+				write_opcode(sock_d, PUT_STATUS_OK);
+			}
+			if (chunk > 0){
+				readn(sock_d, block_buf, (int) chunk);
+				fwrite(block_buf, 1, chunk, fstr);
+				write_opcode(sock_d, PUT_STATUS_OK);
+			}
+			iteration++;
+        	
+    		}
+		fclose(fstr);
+	}
+
+    	free(block_buf);
+    	return;
+}
+
+/**
+ * @brief Serve a clients request to get a file from the FTP server
+ * @pre Client and Server are following our FTP protocol
+ * @pre Files size in bits is less than 2^32 
+ * @post file transferred from srver to client
+ * @param sock_d (int) Socket file descriptor
+ * @param ld (log_desc*) Information for logging
+ */
+void serve_get(int sock_d, log_desc* ld){
+	short len = 0;
+	char filename[256];
+	char *block_buf = malloc(MAX_BLOCK_SIZE);
+	// Ensure the buffers are empty
+	bzero(filename, 256);
+	bzero(block_buf, MAX_BLOCK_SIZE);
+	char op = 'A';
+	// Read in length of the filename buffer
+    	if(read_twonetbs(sock_d, &len) < 0){
+        	free(block_buf);
+		return;
+    	}
+
+	// Read the filename buffer
+	if(readn(sock_d, filename, (int) len) < 0){
+        	free(block_buf);
+		return;
+    	}
+    
+	if(strlen(filename) > 0){
+		char *fname = filename;
+		FILE *fstr = NULL;
+		struct stat file_stat;
+		int transfer_remain = 0;
+		//check if file exists, get size
+		if ((stat(fname, &file_stat)) == 0){
+			//get size of transfer in bytes
+			transfer_remain = file_stat.st_size;
+			//try and open file read only
+			//if fails send error flag
+			fstr = fopen(fname, "r" );
+			if (fstr == NULL){
+				if(write_opcode(sock_d, GET_STATUS_ERR) < 0){
+					free(block_buf);
+					return;
+				}
+				free(block_buf);
+				return;
+			}
+			//otherwise, all okay at this end
+			if(write_opcode(sock_d, GET_STATUS_READY) < 0){
+				free(block_buf);
+				fclose(fstr);
+				return;
+			}
+			//is other end okay?
+			//read code
+			if (read_opcode(sock_d, &op) < 0){
+				free(block_buf);
+				fclose(fstr);
+				return;
+			}	
+			//if other end isn't ready, abort. 
+			if (op != GET_STATUS_READY){
+				free(block_buf);
+				fclose(fstr);
+				return;
+			}
+	
+			//send total file size
+			if (write_fournetbs(sock_d, transfer_remain) < 0){
+				//couldn't write size
+				free(block_buf);
+				fclose(fstr);
+				return;
+			}
+			//if amount to send exceeds max block size, send a max size block. Otherwise send remaining data.
+			if (transfer_remain > 0){
+				while (transfer_remain > 0){
+					if (transfer_remain > MAX_BLOCK_SIZE){
+						fread(block_buf, 1, MAX_BLOCK_SIZE, fstr);
+						write_twonetbs(sock_d, (short) MAX_BLOCK_SIZE);
+						writen(sock_d, block_buf, MAX_BLOCK_SIZE);
+						transfer_remain = transfer_remain - MAX_BLOCK_SIZE;
+						if (read_opcode(sock_d, &op) < 0){
+						//transfer issue - abort
+							free(block_buf);
+							fclose(fstr);
+							return;
+						}
+						if (op != GET_STATUS_OK){
+							//transfer issue - abort
+							free(block_buf);
+							fclose(fstr);
+							return;
+						}
+					}	
+					else
+					{
+						fread(block_buf, 1, (int) transfer_remain, fstr);
+						write_twonetbs(sock_d, (short) transfer_remain);
+						writen(sock_d, block_buf, transfer_remain);
+						transfer_remain = 0;
+						//following zero size write breaks look at other end
+						write_twonetbs(sock_d, (short) transfer_remain);
+						if (read_opcode(sock_d, &op) < 0){
+							//expected opcode didn't arrive, expected PUT_STATUS_OK
+							free(block_buf);
+							fclose(fstr);
+							return;
+						}
+						if (op != GET_STATUS_OK){
+							//Transfer issue - abort
+							free(block_buf);
+							fclose(fstr);
+							return;
+						}
+					}
+				}
+				if (read_opcode(sock_d, &op) < 0){
+        	                //expected opcode didn't arrive, expected PUT_STATUS_OK
+					free(block_buf);
+					fclose(fstr);
+					return;
+				}
+				if (op != GET_STATUS_OK){
+				//Transfer issue - abort
+					free(block_buf);
+					fclose(fstr);
+					return;
+				}
+			}
+			else 
+			{
+			//if file size is zero bytes just wait for ackowledgment
+				write_twonetbs(sock_d, (short) transfer_remain);
+				if (read_opcode(sock_d, &op) < 0){
+        	                 	//expected opcode didn't arrive, expected PUT_STATUS_OK
+					free(block_buf);
+					fclose(fstr);
+					return;
+				}
+				if (op != GET_STATUS_OK){
+	                        //Transfer issue - abort
+                      			free(block_buf);
+					fclose(fstr);   
+					return;
+				}
+			}
+		} 
+		else
+		{
+			//stat file failed
+			write_opcode(sock_d, GET_STATUS_ERR);
+	                free(block_buf);
 			return;
 		}
-		//if amount to send exceeds max block size, send a max size block. Otherwise send remaining data.
-        	if (transfer_remain > 0){
-			while (transfer_remain > 0){
-                        	if (transfer_remain > MAX_BLOCK_SIZE){
-                                	fread(block_buf, 1, MAX_BLOCK_SIZE, fstr);
-                                	write_twonetbs(sock_d, (short) MAX_BLOCK_SIZE);
-                                	writen(sock_d, block_buf, MAX_BLOCK_SIZE);
-                                	transfer_remain = transfer_remain - MAX_BLOCK_SIZE;
-                                	if (read_opcode(sock_d, &op) < 0){
-                                        	//transfer issue - abort
-                                		free(block_buf);
-                        			fclose(fstr);
-						return;
-                                	}
-                                	if (op != GET_STATUS_OK){
-                                		//transfer issue - abort
-						free(block_buf);
-                        			fclose(fstr);
-						return;
-                                	}
+		fclose(fstr);
+	}
 
-                        	}	
-                        	else
-                        	{
-                                	fread(block_buf, 1, (int) transfer_remain, fstr);
-                                	write_twonetbs(sock_d, (short) transfer_remain);
-                                	writen(sock_d, block_buf, transfer_remain);
-                                	transfer_remain = 0;
-                                	//following zero size write breaks look at other end
-                                	write_twonetbs(sock_d, (short) transfer_remain);
-                                	if (read_opcode(sock_d, &op) < 0){
-                                        	//expected opcode didn't arrive, expected PUT_STATUS_OK
-				        	free(block_buf);
-                        			fclose(fstr);
-						return;
-                                	}
-                                	if (op != GET_STATUS_OK){
-                                        	//Transfer issue - abort
-				        	free(block_buf);
-                        			fclose(fstr);
-						return;
-                                	}
-
-                        	}
-
-                	}
-			 if (read_opcode(sock_d, &op) < 0){
-                         //printf("5 - expected opcode didn't arrive, expected PUT_STATUS_OK\n");
-                               	free(block_buf);
-                        	fclose(fstr);
-				return;
-                         }
-                         if (op != GET_STATUS_OK){
-                         //Transfer issue - abort
-                                free(block_buf);
-                        	fclose(fstr);
-				return;
-                         }
-
-		}
-		else {
-		//if file size is zero bytes just wait for ackowledgment
-			write_twonetbs(sock_d, (short) transfer_remain);
-                        //writen(sock_d, block_buf, transfer_remain); 
-			
-			if (read_opcode(sock_d, &op) < 0){
-                         //expected opcode didn't arrive, expected PUT_STATUS_OK
-                                free(block_buf);
-                        	fclose(fstr);
-				return;
-                         }
-                         if (op != GET_STATUS_OK){
-                         //Transfer issue - abort
-                      		free(block_buf);
-                        	fclose(fstr);   
-		      		return;
-                         }
-			
-		}
-		
-	   } 
-	   else
-	 {
-	  //stat file failed
-	  if(write_opcode(sock_d, GET_STATUS_ERR) < 0){
-                       free(block_buf);
-                       fclose(fstr);
-		       return;
-                }
-       	 }
-        fclose(fstr);
-    }
-
-    free(block_buf);
-    return;
+	free(block_buf);
+	return;
 }
 
 
@@ -373,7 +526,7 @@ int main(int argc, char** argv)
     struct sockaddr_in cli_addr;    // Client socket address
     socklen_t cli_addrlen;          // Length of the client address
     pid_t pid;                      // pid for child processes
-
+	log_desc ld;
 
     /* Check the command line args */
     if(argc == 1 || argc > 2)
@@ -388,6 +541,11 @@ int main(int argc, char** argv)
             printf("Initial current directory not found!\n");
             exit(1);
         }
+
+		ld.path_to_logfile = (char*)malloc(256 * sizeof(char*));
+
+		getcwd(ld.path_to_logfile, 256);
+		strcat(ld.path_to_logfile, LOGGER_FNAME);
     }
 
     /* Turn server into a daemon */
@@ -430,7 +588,7 @@ int main(int argc, char** argv)
         /* To reach here the process must be a child */
         close(sock_d);
         /* serve the client */
-        server_a_client(acc_sd);
+        server_a_client(acc_sd, &ld);
         /* exit child process */
         exit(0);
 
@@ -439,38 +597,29 @@ int main(int argc, char** argv)
     return 0;
 }
 
-void server_a_client(int sock_d)
+void server_a_client(int sock_d, log_desc* ld)
 {
-    int nr, nw;
     char opcode;
 
     while(read_opcode(sock_d, &opcode) > 0){
-        /*read data from client*/
-        // if((nr = readn(sock_d, buf, MAX_BLOCK_SIZE)) <= 0){
-        //     return; /* connection broke down */
-        // }
-        // nw = writen(sock_d, return_msg, sizeof(return_msg));
 
-        /* Read OpCode from client */
-        // if( (nr = read_opcode(sock_d, &opcode)) <= 0){
-        //     return;files_bu
-        // }
+        my_log(ld, opcode, "Recieved OPcode from client");
 
         switch(opcode){
             case DIR_OPCODE:
-                serve_dir(sock_d);
+                serve_dir(sock_d, ld);
                 break;
             case PWD_OPCODE:
-                serve_pwd(sock_d);
+                serve_pwd(sock_d, ld);
                 break;
             case CD_OPCODE:
-                serve_cd(sock_d);
-		break;
-	    case PUT_OPCODE:
-		serve_put(sock_d);
+                serve_cd(sock_d, ld);
                 break;
-	    case GET_OPCODE:
-                serve_get(sock_d);
+            case PUT_OPCODE:
+                serve_put(sock_d, ld);
+                break;
+            case GET_OPCODE:
+                serve_get(sock_d, ld);
                 break;
             default:
                 break;

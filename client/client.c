@@ -1,3 +1,11 @@
+/**
+ * @file client.c
+ * @author Mathew Devene & Joshua Harvey
+ * @brief Client program to connect to our simple FTP server
+ * @pre FTP server must be running on its well known port
+ * @post client is either connected to FTP server and shell is running, or connection is refused
+ */
+
 #include <string.h>
 #include <strings.h>
 #include <stdlib.h>
@@ -18,12 +26,20 @@
 #include "stream.h"
 #include "protocol.h"
 
-#define SERV_TCP_PORT 40005
+// Well known port
+#define SERV_TCP_PORT 40744
 
 #define h_addr h_addr_list[0]
 
 #define u_long unsigned long
 
+/**
+ * @brief Print the local current working directory to stdout
+ * @pre N/A
+ * @post N/A
+ * @param void
+ * @return void
+ */
 void local_pwd(){
     char buf[MAX_BLOCK_SIZE];
     memset(buf, 0, MAX_BLOCK_SIZE);
@@ -31,12 +47,26 @@ void local_pwd(){
     printf("%s\n", buf);
 }
 
+/**
+ * @brief Change the current working directory of the client
+ * @pre dir parameter is valid
+ * @post current working directory has been changed
+ * @param dir (char*) directory to change to
+ * @return void
+ */
 void local_cd(char* dir){
     if(chdir(dir) == -1){
         printf("Error: directory not found\n");
     }
 }
 
+/**
+ * @brief Print the contents of the current working directory
+ * @pre N/A
+ * @post N/A
+ * @param void
+ * @return void
+ */
 void local_dir(){
     DIR* dir_p;
     struct dirent* dirent_p;
@@ -47,8 +77,8 @@ void local_dir(){
     if((dir_p = opendir(".")) == NULL){
         perror("opening dir");
     } else {
-        //strcat(files_buf, "\n");
         while( (dirent_p = readdir(dir_p)) != NULL){
+            // Dont print the current and parent directory
             if(strcmp(dirent_p->d_name, ".") == 0)
                 continue;
             
@@ -64,10 +94,17 @@ void local_dir(){
     }
 }
 
+/**
+ * @brief Send a request to the FTP server to retrieve the contents of the 
+ * remote current working directory. The send request follows our FTP Protocol spec
+ * @pre N/A
+ * @post N/A
+ * @param sock_d (int) the file descriptor of the socket connected to the server
+ * @return void
+ */
 void send_dir(int sock_d){
     char op = 0;
     short nr=0; 
-    int nw=0;
     char files_buf[MAX_BLOCK_SIZE]; 
 
     // Write the OpCode 
@@ -96,15 +133,24 @@ void send_dir(int sock_d){
     printf("%s\n", files_buf);
 }
 
+/**
+ * @brief Send a request to the FTP server to print the current working
+ * @pre N/A
+ * @post N/A
+ * @param sock_d (int) file descriptor of the socket that communicates with the server
+ * @return void
+ */
 void send_pwd(int sock_d){
 
     char op;
     short len;
 
+    // Write the PWD Opcode
     if(write_opcode(sock_d, PWD_OPCODE) < 0){
         printf("Failed to send OpCode!\n"); return;
     }
 
+    // Read the response OP code
     if(read_opcode(sock_d, &op) < 0){
         printf("Failed to read OpCode!\n"); return;
     }
@@ -113,12 +159,14 @@ void send_pwd(int sock_d){
         printf("Wrong OpCode recieved\n"); return;
     }
 
+    // Read the length of the buffer
     if(read_twonetbs(sock_d, &len) < 0){
         printf("Failed to read message length\n"); return;
     }
     
     char pwd_buf[len+1];
 
+    // Read the buffer
     if(readn(sock_d, pwd_buf, (int) len) < 0){
         printf("Failed to read pwd from server!\n"); return;
     }
@@ -128,6 +176,14 @@ void send_pwd(int sock_d){
     printf("%s\n", pwd_buf);
 }
 
+/**
+ * @brief Send a request to change the current working directory of the remote server
+ * @pre directory to change to must exist on the FTP server
+ * @post current working directory is changed to dir
+ * @param sock_d (int) file descriptor of the socket
+ * @param dir (char*) directory to change to
+ * @return void
+ */
 void send_cd(int sock_d, char* dir){
 
     char op;
@@ -171,10 +227,19 @@ void send_cd(int sock_d, char* dir){
     return;
 }
 
+/**
+ * @brief Send a request to the FTP server to PUT a new file
+ * @pre File to be put needs to exist on the clients filesystem
+ * @pre File to be sent is less than 2^32 - 1 bits
+ * @pre Client must have read/write permission to the file
+ * @post file is on the serves filesystem
+ * @param sock_d (int) file descriptor of the socket
+ * @param filename (char*) name of file to send to server
+ * @return void
+ */
 void send_put(int sock_d, char* filename ){
 
-    char op;
-    char ack;
+    char op = 'A';
     char *block_buf = malloc(MAX_BLOCK_SIZE);
     int len = strlen(filename);
     //clear buffer
@@ -195,10 +260,9 @@ void send_put(int sock_d, char* filename ){
 
     if(strlen(filename) > 0){
         char *fname = filename;
-        FILE *fstr;
+        FILE *fstr = NULL;
         struct stat file_stat;
-	int transfer_remain;
-	int file_offset;
+	int transfer_remain = 0;
 
 	if(stat(fname, &file_stat) == 0){
 		//get size of transfer in bytes
@@ -216,7 +280,7 @@ void send_put(int sock_d, char* filename ){
 			return;
 		}
 		//when we have confirmed we can stat and open the file, send status
-		if(write_opcode(sock_d, PUT_STATUS_OK) < 0){
+		if(write_opcode(sock_d, PUT_STATUS_READY) < 0){
                 	free(block_buf);
 			fclose(fstr);
 			return;
@@ -228,7 +292,7 @@ void send_put(int sock_d, char* filename ){
                         fclose(fstr);
 			return;
 		}
-		if (op != PUT_STATUS_OK){
+		if (op != PUT_STATUS_READY){
 			if (op == PUT_STATUS_ERR)
 			{
 				printf ("2 - Remote - Could not open for writing: %s\n", fname);
@@ -237,7 +301,7 @@ void send_put(int sock_d, char* filename ){
 				return;
 			}
 			else{
-				printf("2 - Unknown flag from remote end");
+				printf("2 - Unknown flag from remote end - %c\n",op);
 				free(block_buf);
 				fclose(fstr);
 				return;
@@ -316,9 +380,12 @@ void send_put(int sock_d, char* filename ){
 	}
 	else{
 		//could not stat file
+		if(write_opcode(sock_d, PUT_STATUS_ERR) < 0){
+			return;
+		}
 		printf("5 - Local - Could not open file\n");
 		free(block_buf);
-                fclose(fstr);
+                //fclose(fstr);
 		return;
 	}
 	}
@@ -327,15 +394,23 @@ void send_put(int sock_d, char* filename ){
     return;
 }
 
-
+/**
+ * @brief Send a request to get a file from the remote FTP server
+ * @pre File to get exists on the FTP servers filesystem
+ * @pre File's length in bits is less than 2^32 bits
+ * @pre Client must have read/write permission to the directory
+ * @post File transferred from the FTP server to the client
+ * @param sock_d (int) file descriptor of the TCP socket
+ * @param filename (char*) remote filename to get
+ * @return void
+ */
 void send_get(int sock_d, char* filename ){
 
-    char op;
-    char ack;
+    char op = 'A';
     char *block_buf = malloc(MAX_BLOCK_SIZE);
     int len = strlen(filename);
     int transfer_remain = 0;
-    short chunk;
+    short chunk = 0;
     bzero(block_buf, MAX_BLOCK_SIZE);
 
     if(write_opcode(sock_d, GET_OPCODE) < 0){
@@ -346,36 +421,48 @@ void send_get(int sock_d, char* filename ){
 
     if(write_twonetbs(sock_d, (short) len) < 0){
         printf("2 - Failed to write buffer length\n"); 
-	free(block_buf);
-	return;
+        free(block_buf);
+        return;
     }
 
     if(writen(sock_d, filename, len) < 0){
         printf("3 - Failed writing buffer\n"); 
-	free(block_buf);
-	return;
+        free(block_buf);
+        return;
     }
 
     if(len > 0){
         char *fname = filename;
-        FILE *fstr;
-        int file_offset;
+        FILE *fstr = NULL;
 	if (read_opcode(sock_d, &op) < 0){
                 free(block_buf);
 		return;
         }
         //no point in wiping out a local file until we know the other end is ready to send a replacement. 
-	if (op == GET_STATUS_OK){
-        	printf ("6 - File opened on the remote end: %s\n", fname);
+	if (op == GET_STATUS_READY){
+        	//printf ("5 - File opened on the remote end: %s\n", fname);
 	        fstr = fopen(fname, "w" );
+		if (fstr == NULL){
+                        printf ("6 - Could not opened file for writing: %s\n", fname);
+                        write_opcode(sock_d, GET_STATUS_ERR);
+                        free(block_buf);
+                        return;
+                }
 		fclose(fstr);
 		//reopen now-empty file in append mode
 		fstr = fopen(fname, "a" );
 		if (fstr == NULL){
 			printf ("7 - Could not opened file for writing: %s\n", fname);
+			write_opcode(sock_d, GET_STATUS_ERR);
 			free(block_buf);
 	                return;
 		}
+		//if we've survived this long, we are ready, send ready flag. 
+		if(write_opcode(sock_d, GET_STATUS_READY) < 0){
+                        free(block_buf);
+                        fclose(fstr);
+                        return;
+                }
 		//get total size of transfer - for reporting size only 
 		if(read_fournetbs(sock_d, &transfer_remain) < 0){
 			printf("8 - Could not get size of remote file: %s\n", fname);
@@ -430,9 +517,8 @@ int main(int argc, char** argv)
     struct sockaddr_in ser_addr;    // server address
     struct hostent *hp;             // host information
     char* tokens[MAX_NUM_TOKENS];   // tokens of the input command
-    char temp_buf[MAX_BLOCK_SIZE];  // Create a temp buffer since the tokenisation will malform the input string
     int num_tokens;                 // Number of tokens after a line has been tokenised
-    int nw, nr;
+    int nr;
 
     // Connect to local host socket for now...
     if(argc == 1){
@@ -475,7 +561,7 @@ int main(int argc, char** argv)
         memset(buf, 0, sizeof(buf));
         //memset(temp_buf, 0, sizeof(temp_buf));
 
-        printf("$ ");
+        printf("myftp> ");
 
         fgets(buf, sizeof(buf), stdin);
         
@@ -497,7 +583,12 @@ int main(int argc, char** argv)
             num_tokens = tokenise(buf, tokens);
 
             if(strcmp(tokens[0], "lpwd") == 0){
-                local_pwd();
+                if(num_tokens == 1){
+                    local_pwd();
+                }
+                else {
+                    printf("Invalid command. Usage is: lpwd\n");
+                }
             }
             else if(strcmp(tokens[0], "lcd") == 0){
                 if(num_tokens == 2){
@@ -507,13 +598,28 @@ int main(int argc, char** argv)
                 }
             }
             else if(strcmp(tokens[0], "ldir") == 0){
-                local_dir();
+                if(num_tokens == 1){
+                    local_dir();
+                }
+                else {
+                    printf("Invalid command. Usage is: ldir\n");
+                }
             }
             else if(strcmp(tokens[0], "dir") == 0){
-                send_dir(sock_d);
+                if(num_tokens == 1){
+                    send_dir(sock_d);
+                }
+                else {
+                    printf("Invalid command. Usage is: dir\n");
+                }
             }
             else if(strcmp(tokens[0], "pwd") == 0){
-                send_pwd(sock_d);   
+                if(num_tokens == 1){
+                    send_pwd(sock_d);
+                }
+                else {
+                    printf("Invalid command. Usage is: pwd\n");
+                }   
             }
             else if(strcmp(tokens[0], "cd") == 0){
                 if(num_tokens == 2){
